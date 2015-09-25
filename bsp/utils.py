@@ -95,7 +95,8 @@ def iter_neighbours(columns, y, x, distances, inhibition_area):
             yield u, v, syn_matrix
 
 
-def extract_patches(images, patch_shape, patches_nr=None):
+def extract_patches(images, patch_shape, patches_nr=None,
+                    to_bits=False, threshold_method='mean'):
     """
     Extracts patches_nr patches of patch_shape shape from the images. The
     patches are taken randomly from the whole set of images.
@@ -105,8 +106,16 @@ def extract_patches(images, patch_shape, patches_nr=None):
     :param patch_shape: tuple (p,q) of two elements specifying the number of
                         rows (p) and columns (q) in a patch.
     :param patches_nr: amount of patches to generate.
+    :param to_bits: if True, convert patches' pixels to binary values. The 
+                    average pixel value per patch will be used as the
+                    threshold, everything above it is 1, everything below it
+                    is 0.
+    :param threshold_method: in the case of conversion to bits, the method
+                             used for determining the threshold of selection.
+                             Possible values 'mean' or 'median'.
     :return: array of shape (patches_nr, patch_shape[0], patch_shape[1])
     """
+    assert threshold_method in ('mean', 'median')
     # get the shape (m, n) of each image
     img_shape = images.shape[1:]
     # calculate what is the maximum index a patch can start at.
@@ -119,11 +128,14 @@ def extract_patches(images, patch_shape, patches_nr=None):
         patches_per_img = img_shape[0] - patch_shape[0]
         patches_per_img *= img_shape[1] - patch_shape[1] + 1
         patches_nr = patches_per_img * images.shape[0]
+    patches_shape = (patches_nr, patch_shape[0], patch_shape[1])
     # initialize the array to store the patches extracted
-    patches = np.empty((patches_nr, patch_shape[0], patch_shape[1]))
+    patches = np.zeros(patches_shape)
+    if to_bits:
+        patches = patches.astype(np.bool)
 
-    # xrange(patches_nr) generates a list from 0 to patches_nr
-    for i in xrange(patches_nr):
+    i = 0
+    while i < patches_nr:
         # pick an image at random
         img_index = np.random.randint(low=0, high=images.shape[0])
         # pick a start row at random
@@ -134,14 +146,30 @@ def extract_patches(images, patch_shape, patches_nr=None):
         x_from = np.random.randint(low=0, high=x_high + 1)
         # calculate the end column
         x_to = x_from + patch_shape[1]
-        # extract patch from the image picked
-        patches[i] = images[img_index, y_from:y_to, x_from:x_to]
+        # extract patch from the image picked;
+        patch = images[img_index, y_from:y_to, x_from:x_to]
+        # if is necessary to convert to bits, ...
+        if to_bits:
+            # calculate the patch's threshold, ...
+            if threshold_method == 'mean':
+                threshld_lum = patch.mean()
+            elif threshold_method == 'median':
+                threshld_lum = patch.mean()
+
+            # assign true to everything above the mean, ...
+            patch[patch >= threshld_lum] = True
+            # assign false to everything below the mean, ...
+            patch[patch < threshld_lum] = False
+        # if all the pixels in the patch are the same, ...
+        if len(np.unique(patch)) > 1:
+            # store the patch in the return array.
+            patches[i] = patch
+            i += 1
 
     return patches
 
 
-def load_images(images_path, extensions=('.png',), img_shape=(256, 256),
-                mode='grayscale'):
+def load_images(images_path, extensions=('.png',), img_shape=(256, 256)):
     """
     Loads images from images_path into a np.array.
     :param images_path: path to the directory containing the images. The search
@@ -151,9 +179,6 @@ def load_images(images_path, extensions=('.png',), img_shape=(256, 256),
                        extensions must start with a '.' and be lowercase.
     :param images_path: shape of the images. All images found will be reshaped
                         according to this parameter.
-    :param mode: color mode to convert the images to. Psssible values:
-                 'grayscale' (default) for grayscale images, 'bn' for black and
-                 white, and anything else for no conversion.
     :return: a tuple (np.array of shape
             (len(image files), img_shape[0], img_shape[1]), list of file paths)
     """
@@ -166,22 +191,12 @@ def load_images(images_path, extensions=('.png',), img_shape=(256, 256),
 
     # load each file found, ...
     for i, image_file in enumerate(image_files):
-        if mode == 'grayscale':
-            # convert it to grayscale using the formula:
-            # L = R * 299/1000 + G * 587/1000 + B * 114/1000
-            # where R, G and B are each pixel's RGB values, ...
-            img = Image.open(image_file).convert('L')
-        elif mode == 'bn':
-            # or convert it to black and white, by first converting it to
-            # grayscale using the formula mentioned above, and then setting
-            # all pixels above 127 to 1 and everything else to 0, ...
-            img = Image.open(image_file).convert('1', dither=False)
-        else:
-            # or just load the image with no conversion; ...
-            img = Image.open(image_file)
+        # convert it to grayscale using the formula:
+        # L = R * 299/1000 + G * 587/1000 + B * 114/1000
+        # where R, G and B are each pixel's RGB values, ...
         img = Image.open(image_file).convert('L')
         # resize it to the correct dimensions ...
-        img = img.resize(img_shape)
+        img = img.resize(img_shape, Image.LANCZOS)
         # and add it to the return array
         images[i] = np.asarray(img)
 

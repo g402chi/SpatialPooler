@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 ================================LICENSE======================================
 Copyright (c) 2015 Chirag Mello & Mario Tambos
@@ -594,6 +595,15 @@ if __name__ == '__main__':
     from utils import load_images, extract_patches
     import cPickle as pickle
 
+    # Check whether the --output_file command line parameter was provided.
+    output_file = '.'
+    if '--output_file' in sys.argv:
+        # Get the command line parameter value.
+        arg_index = sys.argv.index('--output_file')
+        output_file = sys.argv[arg_index + 1]
+    else:
+        sys.exit('The parameter --output_file is mandatory.')
+
     # Check whether the --images_path command line parameter was provided.
     images_path = '.'
     if '--images_path' in sys.argv:
@@ -636,8 +646,10 @@ if __name__ == '__main__':
             patches = images
 
     # Finally, start the learning procedure.
-    spatial_pooler(patches, shape=(16, 16, 16, 16), p_connect=0.15,
-                   connect_threshold=0.2,
-                   p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
-                   min_activity_threshold=0.01, min_overlap=3,
-                   desired_activity_mult=0.05)
+    columns = spatial_pooler(patches, shape=(16, 16, 16, 16), p_connect=0.15,
+                             connect_threshold=0.2,
+                             p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
+                             min_activity_threshold=0.01, min_overlap=3,
+                             desired_activity_mult=0.05)
+    with open(output_file, 'wb') as fp:
+        pickle.dump(columns, fp)

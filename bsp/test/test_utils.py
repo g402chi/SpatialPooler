@@ -103,6 +103,14 @@ class UtilsTest(unittest.TestCase):
                     break
             self.assertTrue(patch_in_image)
 
+    def test_extract_patches_bits(self):
+        images = np.array([[range(10)]*10]*100)
+        patches = utils.extract_patches(images, (3, 3), patches_nr=15,
+                                        to_bits=True)
+        for patch in patches:
+            self.assertIsInstance(patch, np.ndarray)
+            self.assertEqual(patch.dtype, np.bool)
+
     def test_load_images(self):
         images, image_files = utils.load_images(self.images_path,
                                                 extensions=('.jpg',),
