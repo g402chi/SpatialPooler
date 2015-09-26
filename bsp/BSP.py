@@ -39,9 +39,12 @@ Another way of thinking about it is that **columns** is a 2-dimensional array
 whose elements are columns, and each column is in turn a 2-dimensional array
 of synapses.
 """
+from __future__ import division, print_function
 
 from collections import defaultdict, deque
+import cPickle as pickle
 from functools import partial
+from pprint import pprint
 
 import numpy as np
 import numexpr as ne
@@ -251,6 +254,11 @@ def inhibit_columns(columns, distances, inhibition_area,
     """
     # Initialize the active array filling it with False.
     active = np.zeros(shape=columns.shape[:2], dtype=np.bool)
+    # Calculate the inhibition radius. It is easier to check if the distance
+    # from column a to column b is less than the inhibition radius, than to
+    # check whether column b lies inside column a's inhibition area.
+    # Both approaches are equivalent, since the inhibition area is a circle.
+    inhibition_radius = 4 * np.sqrt(inhibition_area/np.pi)
 
     # For each column [y, x]...
     for y, x, _ in iter_columns(columns):
@@ -263,7 +271,7 @@ def inhibit_columns(columns, distances, inhibition_area,
             activity_sum = 0
             # obtain the list of neighbours of the column [y, x], ...
             neighbours = iter_neighbours(columns, y, x, distances,
-                                         inhibition_area)
+                                         inhibition_radius)
             # for each neighbour [u, v] of [y, x] ...
             for u, v, _ in neighbours:
                 # if the neighbour's overlap is over this column's overlap, ...
@@ -307,13 +315,14 @@ def calculate_inhibition_area(columns):
     # For each column ...
     for _, _, syn_matrix in iter_columns(columns):
         # set d = max([a, b], y) - min([a, b], y), ...
-        d = syn_matrix.argmax(axis=1) - syn_matrix.argmin(axis=1)
+        d = syn_matrix.argmax(axis=0).max() - syn_matrix.argmin(axis=0).max()
         # add max([a, b], x) - min([a, b], x) to d, ...
-        d += syn_matrix.argmax() - syn_matrix.argmin()
+        d += syn_matrix.argmax(axis=1).max() - syn_matrix.argmin(axis=1).max()
         # add 2 to d, ...
         d += 2
         # calculate the receptive field based on d, ...
-        receptive_field = np.pi * d**2 / 16
+        receptive_radius = d/4
+        receptive_field = np.pi * receptive_radius**2
         # add the receptive field of the column [y, x] to the accumulator, ...
         inhibition_area += receptive_field
 
@@ -360,6 +369,12 @@ def calculate_min_activity(columns, active, distances, inhibition_area,
     """
     # Initialize the min_activity array.
     min_activity = np.zeros(shape=columns.shape[:2])
+    # Calculate the inhibition radius. It is easier to check if the distance
+    # from column a to column b is less than the inhibition radius, than to
+    # check whether column b lies inside column a's inhibition area.
+    # Both approaches are equivalent, since the inhibition area is a circle.
+    inhibition_radius = 4 * np.sqrt(inhibition_area/np.pi)
+
     # For each column [y, x], ...
     for y, x, _ in iter_columns(columns):
         # if [y, x] is active this itearation, ...
@@ -367,7 +382,7 @@ def calculate_min_activity(columns, active, distances, inhibition_area,
             max_activity = 0
             # get the neighbours of [y, x] ...
             neighbours = iter_neighbours(columns, y, x, distances,
-                                         inhibition_area)
+                                         inhibition_radius)
             # and for each neighbour [u, v] of [y, x], ...
             for u, v, _ in neighbours:
                 # calculate the how many times [u, v] was active during the
@@ -497,7 +512,8 @@ def test_for_convergence(synapses_modified):
 def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
                    p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
                    min_activity_threshold=0.01, min_overlap=3,
-                   desired_activity_mult=0.05, max_iterations=1000):
+                   desired_activity_mult=0.05, max_iterations=10000,
+                   cycles_to_save=100, output_file=None):
     """
     Implements the main BSP loop (p. 3). It goes continually through the images
     set until convergence.
@@ -533,6 +549,9 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
     :param max_iterations: an integer indicating the maximum number of runs
                            through the set of images allowed. Pass None if no
                            limit is desired.
+    :param cycles_to_save: wait this number of iterations over the complete set
+                           of images before saving the columns to disk.
+    :param output_file: file name used to save the pickled columns.
     :return: a matrix *columns* of shape *shape*, created and modified
              according to the BSP learning algorithm.
     """
@@ -545,23 +564,35 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
     activity = defaultdict(part_deque)
 
     # Initialize columns and distances matrices.
+    pprint("Initializing synapses ...")
     columns, distances = initialise_synapses(shape, p_connect,
                                              connect_threshold)
+    pprint("Columns:")
+    random_rows = np.random.randint(0, shape[0], 2)
+    random_cols = np.random.randint(0, shape[1], 2)
+    pprint(columns[random_rows, random_cols])
+    pprint("Distances:")
+    pprint(distances[random_rows, random_cols])
     # Calculate the inhibition_area parameter.
+    pprint("Calculating inhibition area ...")
     inhibition_area = calculate_inhibition_area(columns)
+    pprint("Inhibition area: %s" % inhibition_area)
     # Calculate the desired activity in a inhibition zone.
+    pprint("Calculating desired activity ...")
     desired_activity = desired_activity_mult * inhibition_area
+    pprint("Desired activity: %s" % desired_activity)
 
     converged = False
     i = 0
     # While synapses are modified and the maximum number of iterations is not
     # overstepped, ...
+    pprint("Starting learning loop ...")
     while not converged and (max_iterations is None or i < max_iterations):
         # Initialize the synapses_modified array, assuming no synapses will be
         # modified.
         synapses_modified = np.zeros(shape=len(images), dtype=np.bool)
-        # For each image *image*, with index *i* in the images set, ...
-        for i, image, _ in read_input(images):
+        # For each image *image*, with index *j* in the images set, ...
+        for j, image, _ in read_input(images):
             # calculate the overlap of the columns with the image.
             # (this is a simple count of the number of its connected synapses
             # that are receiving active input (p. 3)), ...
@@ -578,12 +609,36 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
                                        inhibition_area, activity,
                                        min_activity_threshold)
             # and finally, adapt the synapse's permanence values.
-            columns, synapses_modified[i] =\
+            columns, synapses_modified[j] =\
                 learn_synapse_connections(columns, active, image, p_inc,
                                           p_dec, activity, overlap_sum,
                                           min_activity, boost, b_inc, p_mult)
+            # Print a snapshot of the model state every 1000 images.
+            if j % 1000 == 0:
+                pprint("########## %sth iteration ##########" % j)
+                pprint("Overlap:")
+                pprint(overlap[random_rows, random_cols])
+                pprint("Overlap sum:")
+                for l, key in enumerate(overlap_sum.iterkeys()):
+                    if l in random_rows:
+                        pprint(overlap_sum[key])
+                pprint("Activity:")
+                for l, key in enumerate(activity.iterkeys()):
+                    if l in random_rows:
+                        pprint(activity[key])
+                pprint("Active:")
+                pprint(active[random_rows, random_cols])
+                pprint("Min activity:")
+                pprint(min_activity[random_rows, random_cols])
+                pprint("Synapses modified:")
+                pprint(synapses_modified[j])
         # Check if any synapses were modified in the last learning cycle.
         converged = test_for_convergence(synapses_modified)
+        pprint("Iteration %s. Columns modified: %s" %
+               (i, synapses_modified.sum()))
+        if output_file is not None and (i % cycles_to_save == 0 or converged):
+            with open(output_file, 'wb') as fp:
+                pickle.dump(columns, fp)
         # Increment iterations counter.
         i += 1
 
@@ -593,7 +648,6 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
 if __name__ == '__main__':
     import sys
     from utils import load_images, extract_patches
-    import cPickle as pickle
 
     # Check whether the --output_file command line parameter was provided.
     output_file = '.'
@@ -627,17 +681,21 @@ if __name__ == '__main__':
     if patches_file is not None:
         # If the patches_file command line parameter was provided,
         # read it from disk.
+        pprint("Reading patches file ...")
         with open(patches_file, 'rb') as fp:
             patches = pickle.load(fp)
     else:
         # If the patches_file command line parameter was not provided,
         # load the images from disk, ...
+        pprint("Loading images ...")
         images, image_files = load_images(images_path, extensions=['.png'],
                                           img_shape=(256, 256))
         if create_patches:
             # and if the --create_patches was provided generate the patches.
+            pprint("Extracting patches ...")
             patches = extract_patches(images, patch_shape=(16, 16))
             if patches_file is not None:
+                pprint("Saving patches to disk ...")
                 with open(patches_file, 'wb') as fp:
                     pickle.dump(patches, fp)
         else:
@@ -646,10 +704,12 @@ if __name__ == '__main__':
             patches = images
 
     # Finally, start the learning procedure.
+    pprint("Starting training ...")
     columns = spatial_pooler(patches, shape=(16, 16, 16, 16), p_connect=0.15,
                              connect_threshold=0.2,
                              p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
                              min_activity_threshold=0.01, min_overlap=3,
-                             desired_activity_mult=0.05)
+                             desired_activity_mult=0.05,
+                             output_file=output_file)
     with open(output_file, 'wb') as fp:
         pickle.dump(columns, fp)

@@ -63,7 +63,7 @@ def iter_synapses(synapses):
             yield y, x, syn_perm
 
 
-def iter_neighbours(columns, y, x, distances, inhibition_area):
+def iter_neighbours(columns, y, x, distances, inhibition_radius):
     """
     Go through the matrix of synapse's permanences associated with a HTM
     column, yielding at each element the element's coordinates together
@@ -77,7 +77,7 @@ def iter_neighbours(columns, y, x, distances, inhibition_area):
                       distance[a, b, c, d] stores the euclidean distance from
                       the HTM column columns[a, b] to the HTM column
                       columns[c, d].
-    :param inhibition_area: the inhibitionArea parameter of the BSP algorithm.
+    :param inhibition_radius: the inhibitionArea parameter of the BSP algorithm.
     :return: yields a tuple (y, x, syn_matrix), where y is the row index,
              x is the column index and syn_matrix is synapse's permanence
              matrix, all three of a particular HTM column that is neighbour of
@@ -85,8 +85,8 @@ def iter_neighbours(columns, y, x, distances, inhibition_area):
     """
     # Create a boolean array of shape (columns.shape[0], columns.shape[1]).
     # Each element neighbours[a, b] is True if the euclidean distance from
-    # (y, x) to (a, b) is inside the inhibition_area and False otherwise.
-    neighbours = distances[y, x] <= inhibition_area
+    # (y, x) to (a, b) is inside the inhibition_radius and False otherwise.
+    neighbours = distances[y, x] <= inhibition_radius
     # For each column columns[u, v], ...
     for u, v, syn_matrix in iter_columns(columns):
         # if columns[u, v] is a neighbour of columns[y, x], ...
