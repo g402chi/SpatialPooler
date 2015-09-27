@@ -210,6 +210,9 @@ def calculate_overlap(input_vector, columns, min_overlap, connect_threshold,
         if overlap[y, x] < min_overlap:
             # reset it, but, ...
             overlap[y, x] = 0
+            # and then update the overlapSum array, indicating that
+            # the column [y, x] was not updated in this iteration.
+            overlap_sum[y, x].append(0)
         # if the overlap is enough, ...
         else:
             # first boost it, ...
@@ -286,6 +289,10 @@ def inhibit_columns(columns, distances, inhibition_area,
                 # and then update the activity array, indicating that
                 # the column [y, x] was active in this iteration.
                 activity[y, x].append(1)
+            else:
+                # and then update the activity array, indicating that
+                # the column [y, x] was inactive in this iteration.
+                activity[y, x].append(0)
 
     return active, activity
 
@@ -509,8 +516,8 @@ def test_for_convergence(synapses_modified):
     return not synapses_modified.any()
 
 
-def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
-                   p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
+def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
+                   p_inc=0.0005, p_dec=0.0025, b_inc=0.005, p_mult=0.01,
                    min_activity_threshold=0.01, min_overlap=3,
                    desired_activity_mult=0.05, max_iterations=10000,
                    cycles_to_save=100, output_file=None):
@@ -705,9 +712,9 @@ if __name__ == '__main__':
 
     # Finally, start the learning procedure.
     pprint("Starting training ...")
-    columns = spatial_pooler(patches, shape=(16, 16, 16, 16), p_connect=0.15,
-                             connect_threshold=0.2,
-                             p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
+    columns = spatial_pooler(patches, shape=(16, 16, 16, 16), p_connect=0.1,
+                             connect_threshold=0.2, p_inc=0.0005, p_dec=0.0025,
+                             b_inc=0.005, p_mult=0.01,
                              min_activity_threshold=0.01, min_overlap=3,
                              desired_activity_mult=0.05,
                              output_file=output_file)
