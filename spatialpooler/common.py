@@ -232,44 +232,100 @@ def inhibit_columns(columns, distances, inhibition_area,
 
 
 def create_min_max_matrices(coord_matrix, syn_matrix, connect_threshold):
-    # (The elements in max_matrix will be equal to coord_matrix wherever
-    # syn_matrix >= connect_threshold and equal to -infinity everywhere
-    # else. This matrix will be used to calculate the maximum connected
-    # synapse's coordinates)
-    max_matrix = (coord_matrix *
-                  ne.evaluate('syn_matrix >= connect_threshold'))
-    max_matrix[max_matrix == 0] = np.nan
-    max_matrix[np.isnan(max_matrix)] = -np.infty
+    """
+    :param coord_matrix: matrix of synapse's coordinates. Each element [i, j]
+                         of coord_matrix should be equal to i+j. For instane,
+                         for a synapse's matrix of shape (5, 5), coord_matrix
+                         should be:
+                         [[0, 1, 2, 3, 4],
+                         [1, 2, 3, 4, 5],
+                         [2, 3, 4, 5, 6],
+                         [3, 4, 5, 6, 7],
+                         [4, 5, 6, 7, 8]]
+    :param syn_matrix: the matrix of synapse's permanences.
+    :param connect_threshold: the BSP's connectThreshold parameter (p. 3).
+                              Type: float.
+    :return: a tuple (min_matrix, max_matrix) where the elements of min_matrix
+             are equal to coord_matrix wherever syn_matrix >= connect_threshold
+             and equal to +infinity everywhere else. The elements in max_matrix
+             are equal to coord_matrix wherever syn_matrix >= connect_threshold
+             and equal to -infinity everywhere else.
+    """
     # (The elements in min_matrix will be equal to coord_matrix wherever
     # syn_matrix >= connect_threshold and equal to +infinity everywhere
     # else. This matrix will be used to calculate the minimum connected
     # synapse's coordinates)
     min_matrix = (coord_matrix *
                   ne.evaluate('syn_matrix >= connect_threshold'))
+    # set all 0 elements to np.nan
     min_matrix[min_matrix == 0] = np.nan
+    # set all np.nan elements to +infinity
     min_matrix[np.isnan(min_matrix)] = np.infty
 
+    # (The elements in max_matrix will be equal to coord_matrix wherever
+    # syn_matrix >= connect_threshold and equal to -infinity everywhere
+    # else. This matrix will be used to calculate the maximum connected
+    # synapse's coordinates)
+    max_matrix = (coord_matrix *
+                  ne.evaluate('syn_matrix >= connect_threshold'))
+    # set all 0 elements to np.nan
+    max_matrix[max_matrix == 0] = np.nan
+    # set all np.nan elements to -infinity
+    max_matrix[np.isnan(max_matrix)] = -np.infty
     return min_matrix, max_matrix
 
 
 def calculate_min_max_y_x(min_matrix, max_matrix):
+    """
+    :param min_matrix: The elements of min_matrix should be equal to
+                       coord_matrix wherever syn_matrix >= connect_threshold
+                       and equal to +infinity everywhere else.
+    :param max_matrix: The elements in max_matrix should be equal to
+                       coord_matrix wherever syn_matrix >= connect_threshold
+                       and equal to -infinity everywhere else.
+    :return: a tuple (min_y, min_x, max_y, max_x), where min_y is the minimum y
+             coordinate among all connected synapses, min_y is the minimum x
+             coordinate among all connected synapses, max_y is the maximum y
+             coordinate among all connected synapses, and max_y is the maximum
+             x coordinate among all connected synapses.
+    """
+    # If any of min_matrix or max_matrix are all infinity or -infinity,
+    # respectively, then no element was above the connection threshold, so
+    # return 0 for all coordinates.
     if (min_matrix == np.infty).all() or (max_matrix == -np.infty).all():
         return 0, 0, 0, 0
 
+    # For each column, get the index of the minimum element of that column, ...
     min_y = min_matrix.argmin(axis=0)
+    # then create a filter eliminating all columns with only infinity elements,
     min_y_valid = (min_matrix != np.infty).any(axis=0)
+    # and finally apply the filter and get the index of minimum element among
+    # all valid columns.
     min_y = min_y[min_y_valid].min()
 
+    # For each row, get the index of the minimum element of that row, ...
     min_x = min_matrix.argmin(axis=1)
+    # then create a filter eliminating all rows with only infinity elements,
     min_x_valid = (min_matrix != np.infty).any(axis=1)
+    # and finally apply the filter and get the index of minimum element among
+    # all valid rows.
     min_x = min_x[min_x_valid].min()
 
+    # For each column, get the index of the maximum element of that column, ...
     max_y = max_matrix.argmax(axis=0)
+    # then create a filter eliminating all columns with only -infinity
+    # elements,
     max_y_valid = (max_matrix != -np.infty).any(axis=0)
+    # and finally apply the filter and get the index of maximum element among
+    # all valid columns.
     max_y = max_y[max_y_valid].max()
 
+    # For each row, get the index of the maximum element of that row, ...
     max_x = max_matrix.argmax(axis=1)
+    # then create a filter eliminating all rows with only -infinity elements,
     max_x_valid = (max_matrix != -np.infty).any(axis=1)
+    # and finally apply the filter and get the index of maximum element among
+    # all valid rows.
     max_x = max_x[max_x_valid].max()
 
     return min_y, min_x, max_y, max_x
@@ -310,10 +366,12 @@ def update_inhibition_area(columns, connect_threshold):
                              for j in range(shape[1])], dtype=np.float)
     coord_matrix = coord_matrix.reshape(shape)
     # For each column ...
-    for _, _, syn_matrix in iter_columns(columns):  # @UnusedVariable
+    for _, _, syn_matrix in iter_columns(columns):
+        # create matrices to calculate the synapse's min and max coordinates
         min_matrix, max_matrix =\
             create_min_max_matrices(coord_matrix, syn_matrix,
                                     connect_threshold)
+        # calculate the synapse's min and max coordinates
         min_y, min_x, max_y, max_x =\
             calculate_min_max_y_x(min_matrix, max_matrix)
         # set d = max([a, b], y) - min([a, b], y)

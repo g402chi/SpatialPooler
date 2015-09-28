@@ -316,6 +316,10 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
                 learn_synapse_connections(columns, active, image, p_inc,
                                           p_dec, activity, overlap_sum,
                                           min_activity, boost, b_inc, p_mult)
+            # Update the inhibition_area parameter.
+            inhibition_area = update_inhibition_area(columns)
+            # Update the desired activity in a inhibition zone.
+            desired_activity = desired_activity_mult * inhibition_area
             # Print a snapshot of the model state every 1000 images.
             if j % 1000 == 0:
                 pprint("########## %sth image of %sth iteration ##########" %
