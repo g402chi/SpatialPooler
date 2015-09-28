@@ -103,7 +103,7 @@ class BSPTest(unittest.TestCase):
         self.assertEqual(len(activity), 2)
 
     def test_calculate_inhibition_area(self):
-        inhibition_area = BSP.calculate_inhibition_area(self.columns)
+        inhibition_area = BSP.update_inhibition_area(self.columns)
         self.assertIsInstance(inhibition_area, np.ndarray)
         self.assertEqual(inhibition_area.shape, (2, ))
         self.assertAlmostEqual(inhibition_area[0], 0.78539816)
