@@ -51,12 +51,11 @@ import numexpr as ne
 
 from utils import read_input, iter_columns, iter_synapses
 from common import (update_inhibition_area, calculate_min_activity,
-                    calculate_overlap, inhibit_columns, initialise_synapses,
-                    test_for_convergence)
+                    inhibit_columns, initialise_synapses, test_for_convergence)
 
 
 def calculate_overlap(input_vector, columns, min_overlap, connect_threshold,
-                      boost, overlap_sum):
+                      boost):
     """
     Implements the calculateOverlap function from the paper (p. 3).
     :param input_vector: a single input_vector from the images set.
@@ -89,36 +88,29 @@ def calculate_overlap(input_vector, columns, min_overlap, connect_threshold,
     overlap = np.zeros(columns.shape[:2])
     # for each column ...
     for y, x, syn_matrix in iter_columns(columns):  # @UnusedVariable
-        # calculate the overlap as the sum of ON bits in the input_vector
-        # assigned to *connected* synapses and, ...
+        c = (y, x)
+        # calculate the overlap as the sum of pixel's values in the
+        # input_vector assigned to *connected* synapses and, ...
         # (numexpr.evaluate optimizes and carries out the operations defined in
-        # the comparison_expr string, it is used here because numpy has some
+        # its string argument, it is used here because numpy has some
         # problems when comparing NaNs with numbers)
-        input_vector = input_vector.astype(np.bool)
-        comparison_expr = '(syn_matrix >= connect_threshold) & input_vector'
-        overlap[y, x] = np.sum(ne.evaluate(comparison_expr))
+        active_synapses = ne.evaluate('syn_matrix >= connect_threshold')
+        overlap[c] = input_vector[active_synapses].sum()
         # if the overlap is not enough, ...
-        if overlap[y, x] < min_overlap:
+        if overlap[c] < min_overlap:
             # reset it, but, ...
-            overlap[y, x] = 0
-            # and then update the overlapSum array, indicating that
-            # the column [y, x] was not updated in this iteration.
-            overlap_sum[y, x].append(0)
+            overlap[c] = 0
         # if the overlap is enough, ...
         else:
-            # first boost it, ...
-            overlap[y, x] *= boost[y, x]
-            # and then update the overlapSum array, indicating that
-            # the column [y, x] was updated in this iteration.
-            overlap_sum[y, x].append(1)
+            # then boost it.
+            overlap[c] *= boost[c]
 
-    return overlap, overlap_sum
+    return overlap
 
 
 def learn_synapse_connections(columns, active, input_vector, p_inc,
-                              p_dec, activity, overlap_sum,
-                              min_activity, boost, b_inc, p_mult,
-                              connect_threshold):
+                              p_dec, activity, min_activity, boost, b_inc,
+                              p_mult, connect_threshold, distances, b_max):
     """
     Calculates the minActivity matrix from the paper (p. 6).
     :param columns: the 4-dimensional array of HTM columns: a 4-dimensional
@@ -167,6 +159,10 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
                               considered *connected*. All potential synapses
                               start with a permanence value within 0.1 of
                               this parameter.
+    :param distances: a 4-dimensional array of the same shape as *columns*;
+                      each element distances[a, b, c, d] contains the euclidean
+                      distance from (a, b) to (c, d).
+    :param b_max: boost threshold (p. 6).
     :return: a tuple (columns, synapse_modified). *columns* is the  parameter
              of the same name, modified according to the BSP learning
              algorithm. *synapse_modified* is a boolean indicating whether any
@@ -174,35 +170,53 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     """
     # Assume no synapse will be modified.
     synapse_modified = False
+    mean_input = np.nanmean(input_vector)
+
     # For each column [y, x] ...
     for y, x, syn_matrix in iter_columns(columns):
+        c = (y, x)
         # if [y, x] is active in this iteration, ...
-        if active[y, x]:
-            # for each synapse [u, v] of [y, x] with permanence perm, ...
+        if active[c]:
+            # for each potential synapse [u, v] of [y, x] with permanence perm,
             # (NOTE: by definition, perm = syn_matrix[u, v])
             for u, v, perm in iter_synapses(syn_matrix):
-                if (input_vector[u, v] > meanInput(image) and
+                s = (u, v)
+                if (input_vector[s] > mean_input and
                         perm >= connect_threshold):
-                    syn_matrix[u, v] = min(perms + p_inc, 1)
-                elif (input_vector[u, v] > meanInput(image) and
+                    syn_matrix[s] = min(perm + p_inc, 1)
+                elif (input_vector[s] > mean_input and
                         perm < connect_threshold):
-                    syn_matrix[u, v] = min(perm + p_inc,
-                                           connect_threshold - p_inc)
+                    syn_matrix[s] = min(perm + p_inc,
+                                        connect_threshold - p_inc)
                 else:
-                    syn_matrix[u, v] = max(perm - p_dec, 0)
+                    syn_matrix[s] = max(perm - p_dec, 0)
+                # Set synapse_modified to True if any synapse was modified by
+                # this algorithm.
+                if syn_matrix[s] != perm:
+                    synapse_modified = True
 
     for y, x, syn_matrix in iter_columns(columns):
-        boost[y, x] = boost[y, x] + b_inc
-        if (sum(activity[y, x]) < min_activity[y, x] and
-                boost[y, x] > b_max):
-            boost[y, x] = 1
-            ordered_synapses = sorted(iter_synapses(syn_matrix),
-                                      key=lambda u, v, _: distances[y, x, u, v])
-            for u, v, perm in ordered_synapses:
-                if perm < connect_threshold and perm > max_perm:
-                    max_perm = perm
-                    max_s = (u, v)
+        c = (y, x)
+
+        def filter_permanences(s):
+            u, v, perm = s
+            if perm < connect_threshold:
+                return (perm, distances[c][u, v])
+            else:
+                -np.infty
+
+        boost[c] = boost[c] + b_inc
+        if (activity[c].sum() < min_activity[c] and
+                boost[c] > b_max):
+            boost[c] = 1
+            max_syn = max(iter_synapses(syn_matrix), key=filter_permanences)
+            max_s = max_syn[:2]
+            max_perm = max_syn[2]
             syn_matrix[max_s] = connect_threshold + p_inc
+            # Set synapse_modified to True if any synapse was modified by
+            # this algorithm.
+            if syn_matrix[max_s] != max_perm:
+                synapse_modified = True
 
     # Return the columns array, with its synapses modified.
     return columns, synapse_modified
@@ -256,9 +270,7 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
     """
     # Initialize boost matrix.
     boost = np.ones(shape=shape[:2])
-    # Initialize overlap_sum dictionary.
     part_deque = partial(deque, maxlen=1000)
-    overlap_sum = defaultdict(part_deque)
     # Initialize activity dictionary.
     activity = defaultdict(part_deque)
 
@@ -274,7 +286,7 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
     pprint(distances[random_rows, random_cols])
     # Calculate the inhibition_area parameter.
     pprint("Calculating inhibition area ...")
-    inhibition_area = update_inhibition_area(columns)
+    inhibition_area = update_inhibition_area(columns, connect_threshold)
     pprint("Inhibition area: %s" % inhibition_area)
     # Calculate the desired activity in a inhibition zone.
     pprint("Calculating desired activity ...")
@@ -295,9 +307,8 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
             # calculate the overlap of the columns with the image.
             # (this is a simple count of the number of its connected synapses
             # that are receiving active input (p. 3)), ...
-            overlap, overlap_sum =\
-                calculate_overlap(image, columns, min_overlap,
-                                  connect_threshold, boost, overlap_sum)
+            overlap = calculate_overlap(image, columns, min_overlap,
+                                        connect_threshold, boost)
             # force sparsity by inhibiting columns, ...
             active, activity =\
                 inhibit_columns(columns, distances, inhibition_area,
@@ -310,18 +321,19 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
             # and finally, adapt the synapse's permanence values.
             columns, synapses_modified[j] =\
                 learn_synapse_connections(columns, active, image, p_inc,
-                                          p_dec, activity, overlap_sum,
-                                          min_activity, boost, b_inc, p_mult)
+                                          p_dec, activity, min_activity, boost,
+                                          b_inc, p_mult)
+            # Update the inhibition_area parameter.
+            inhibition_area = update_inhibition_area(columns,
+                                                     connect_threshold)
+            # Update the desired activity in a inhibition zone.
+            desired_activity = desired_activity_mult * inhibition_area
             # Print a snapshot of the model state every 1000 images.
             if j % 1000 == 0:
                 pprint("########## %sth image of %sth iteration ##########" %
                        (j+1, i+1))
                 pprint("Overlap:")
                 pprint(overlap[random_rows, random_cols])
-                pprint("Overlap sum:")
-                for l, key in enumerate(overlap_sum.iterkeys()):
-                    if l in random_rows:
-                        pprint(overlap_sum[key])
                 pprint("Activity:")
                 for l, key in enumerate(activity.iterkeys()):
                     if l in random_rows:

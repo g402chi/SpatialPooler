@@ -445,7 +445,7 @@ def calculate_min_activity(columns, active, distances, inhibition_area,
             for u, v, _ in neighbours:
                 # calculate the how many times [u, v] was active during the
                 # last 1000 iterations, ...
-                activity_count = sum(activity[u, v])
+                activity_count = activity[u, v].sum()
                 # and choose the maximum count among all the neighbours of
                 # [y, x].
                 if activity_count > max_activity:
