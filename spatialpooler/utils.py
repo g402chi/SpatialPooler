@@ -143,8 +143,7 @@ def iter_neighbours(columns, y, x, distances, inhibition_radius):
             yield u, v, syn_matrix
 
 
-def extract_patches(images, patch_shape, patches_nr=None,
-                    to_bits=False, threshold_method='mean'):
+def extract_patches(images, patch_shape, patches_nr):
     """
     Extracts patches_nr patches of patch_shape shape from the images. The
     patches are taken randomly from the whole set of images.
@@ -152,69 +151,68 @@ def extract_patches(images, patch_shape, patches_nr=None,
                    m is the row index in an image and n is the columns index in
                    an image.
     :param patch_shape: tuple (p,q) of two elements specifying the number of
-                        rows (p) and columns (q) in a patch.
+                        rows (p) and columns (q) in a patch. The patches' shape
+                        must comply with:
+                            img_shape[0] % patch_shape[0] == 0
+                            img_shape[1] % patch_shape[1] == 0
     :param patches_nr: amount of patches to generate.
-    :param to_bits: if True, convert patches' pixels to binary values. The
-                    average pixel value per patch will be used as the
-                    threshold, everything above it is 1, everything below it
-                    is 0.
+    :return: array of shape (patches_nr, patch_shape[0], patch_shape[1])
+    """
+    # get the shape (m, n) of each image
+    img_shape = images.shape[1:]
+    assert img_shape[0] % patch_shape[0] == 0
+    assert img_shape[1] % patch_shape[1] == 0
+    patches_per_row = img_shape[1] // patch_shape[1]
+    patches_per_column = img_shape[0] // patch_shape[0]
+    patches_per_image = patches_per_row * patches_per_column
+    patched_image_shape = (patches_per_image * images.shape[0],
+                           patch_shape[0], patch_shape[1])
+
+    # initialize the array to store the patches extracted
+    all_patches = np.zeros(patched_image_shape)
+    l = 0
+    for i in range(0, images.shape[0]):
+        for j in range(0, img_shape[0], patch_shape[0]):
+            # calculate the end row
+            y_to = j + patch_shape[0]
+            for k in range(0, img_shape[1], patch_shape[1]):
+                # calculate the end column
+                x_to = k + patch_shape[1]
+                # extract patch from the image picked;
+                patch = images[i, j:y_to, k:x_to]
+                # store the patch in the return array.
+                all_patches[l] = patch
+                l += 1
+
+    return all_patches[np.random.choice(all_patches.shape[0], size=patches_nr,
+                                        replace=False)]
+
+
+def grayscale_to_bits(images, threshold_method='mean'):
+    """
+    :param images: grayscale images to binary (b/w) images.
     :param threshold_method: in the case of conversion to bits, the method
                              used for determining the threshold of selection.
                              Possible values 'mean' or 'median'.
-    :return: array of shape (patches_nr, patch_shape[0], patch_shape[1])
+    :return: array of the same shape as images with the pixel values converted
+             to True/False according to *threshold_method*.
     """
     assert threshold_method in ('mean', 'median')
-    # get the shape (m, n) of each image
-    img_shape = images.shape[1:]
-    # calculate what is the maximum index a patch can start at.
-    # e.g. if an image is 10x10 pixels, indexed from 0 to 9, and the patches
-    # are 3x3 pixels, then x_high = y_high = 7
-    x_high = img_shape[1] - patch_shape[1]
-    y_high = img_shape[0] - patch_shape[0]
-    # if patches_nr is not passed, generate as many patches as possible.
-    if patches_nr is None:
-        patches_per_img = img_shape[0] - patch_shape[0]
-        patches_per_img *= img_shape[1] - patch_shape[1] + 1
-        patches_nr = patches_per_img * images.shape[0]
-    patches_shape = (patches_nr, patch_shape[0], patch_shape[1])
-    # initialize the array to store the patches extracted
-    patches = np.zeros(patches_shape)
-    if to_bits:
-        patches = patches.astype(np.bool)
+    ret_val = np.zeros(images.shape, dtype=np.bool)
+    for i, image in enumerate(images):
+        # calculate the patch's threshold, ...
+        if threshold_method == 'mean':
+            threshld_lum = image.mean()
+        elif threshold_method == 'median':
+            threshld_lum = image.median()
 
-    i = 0
-    while i < patches_nr:
-        # pick an image at random
-        img_index = np.random.randint(low=0, high=images.shape[0])
-        # pick a start row at random
-        y_from = np.random.randint(low=0, high=y_high + 1)
-        # calculate the end row
-        y_to = y_from + patch_shape[0]
-        # pick a column at random
-        x_from = np.random.randint(low=0, high=x_high + 1)
-        # calculate the end column
-        x_to = x_from + patch_shape[1]
-        # extract patch from the image picked;
-        patch = images[img_index, y_from:y_to, x_from:x_to]
-        # if is necessary to convert to bits, ...
-        if to_bits:
-            # calculate the patch's threshold, ...
-            if threshold_method == 'mean':
-                threshld_lum = patch.mean()
-            elif threshold_method == 'median':
-                threshld_lum = patch.mean()
+        # assign true to everything above the mean, ...
+        ret_val[i][image >= threshld_lum] = True
+        # assign false to everything below the mean, ...
+        ret_val[i][image < threshld_lum] = False
 
-            # assign true to everything above the mean, ...
-            patch[patch >= threshld_lum] = True
-            # assign false to everything below the mean, ...
-            patch[patch < threshld_lum] = False
-        # if all the pixels in the patch are the same, ...
-        if len(np.unique(patch)) > 1:
-            # store the patch in the return array.
-            patches[i] = patch
-            i += 1
+    return ret_val
 
-    return patches
 
 
 def load_images(images_path, extensions=('.png',), img_shape=(256, 256)):
