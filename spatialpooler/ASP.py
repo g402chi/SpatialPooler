@@ -52,6 +52,7 @@ import numexpr as ne
 from utils import read_input, iter_columns, iter_synapses
 from common import (update_inhibition_area, calculate_min_activity,
                     inhibit_columns, initialise_synapses, test_for_convergence)
+from utils import RingBuffer
 
 
 def calculate_overlap(input_vector, columns, min_overlap, connect_threshold,
@@ -222,11 +223,11 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     return columns, synapse_modified
 
 
-def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
-                   p_inc=0.0005, p_dec=0.0025, b_inc=0.005, p_mult=0.01,
-                   min_activity_threshold=0.01, min_overlap=3,
-                   desired_activity_mult=0.05, max_iterations=10000,
-                   cycles_to_save=100, output_file=None):
+def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
+                   p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
+                   min_activity_threshold=0.01, desired_activity_mult=0.05,
+                   b_max=4, max_iterations=10000, cycles_to_save=100,
+                   output_file=None):
     """
     Implements the main BSP loop (p. 3). It goes continually through the images
     set until convergence.
@@ -256,9 +257,11 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
                    multiplied.
     :param min_activity_threshold: the BSP's minActivityThreshold parameter
                                    (p. 4).
-    :param min_overlap: the BSP's minOverlap parameter (p. 3). Type: float.
     :param desired_activity_mult: the BSP's desiredActivityMult parameter
                                   (p. 4).
+    :param b_max: the ASP'perm bMax parameter (p. 6). A float that indicates
+                  the amount by which a synapse'perm permanence must be
+                  multiplied.
     :param max_iterations: an integer indicating the maximum number of runs
                            through the set of images allowed. Pass None if no
                            limit is desired.
@@ -270,10 +273,10 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
     """
     # Initialize boost matrix.
     boost = np.ones(shape=shape[:2])
-    part_deque = partial(deque, maxlen=1000)
+    part_rbuffer = partial(RingBuffer,
+                           input_array=np.zeros(1000, dtype=np.bool))
     # Initialize activity dictionary.
-    activity = defaultdict(part_deque)
-
+    activity = defaultdict(part_rbuffer)
     # Initialize columns and distances matrices.
     pprint("Initializing synapses ...")
     columns, distances = initialise_synapses(shape, p_connect,
@@ -304,6 +307,17 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
         synapses_modified = np.zeros(shape=len(images), dtype=np.bool)
         # For each image *image*, with index *j* in the images set, ...
         for j, image, _ in read_input(images):
+            # According to the paper (sic):
+            #   "minOverlap was dynamically set to be the product of the mean
+            #    pixel intensity of the current image and the mean number of
+            #    connected synapses for an individual column."
+            # This leaves unclear exactly what is meant by "mean number of
+            # connected synapses for an individual column"; it could be a
+            # historical mean or a mean over all columns, here the latter was
+            # chosen.
+            mean_conn_synapses = (columns[columns > connect_threshold].size /
+                                  (shape[2] * shape[3]))
+            min_overlap = image.mean() * mean_conn_synapses
             # calculate the overlap of the columns with the image.
             # (this is a simple count of the number of its connected synapses
             # that are receiving active input (p. 3)), ...
@@ -322,7 +336,8 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
             columns, synapses_modified[j] =\
                 learn_synapse_connections(columns, active, image, p_inc,
                                           p_dec, activity, min_activity, boost,
-                                          b_inc, p_mult)
+                                          b_inc, p_mult, connect_threshold,
+                                          distances, b_max)
             # Update the inhibition_area parameter.
             inhibition_area = update_inhibition_area(columns,
                                                      connect_threshold)
@@ -419,8 +434,8 @@ if __name__ == '__main__':
     columns = spatial_pooler(patches, shape=(16, 16, 16, 16), p_connect=0.1,
                              connect_threshold=0.2, p_inc=0.0005, p_dec=0.0025,
                              b_inc=0.005, p_mult=0.01,
-                             min_activity_threshold=0.01, min_overlap=3,
-                             desired_activity_mult=0.05,
+                             min_activity_threshold=0.01,
+                             desired_activity_mult=0.05, b_max=4,
                              output_file=output_file)
     with open(output_file, 'wb') as fp:
         pickle.dump(columns, fp)
