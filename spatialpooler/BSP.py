@@ -41,8 +41,9 @@ of synapses.
 """
 from __future__ import division, print_function
 
-from collections import defaultdict, deque
+from collections import defaultdict
 import cPickle as pickle
+from datetime import datetime
 from functools import partial
 from pprint import pprint
 
@@ -292,6 +293,7 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
     # While synapses are modified and the maximum number of iterations is not
     # overstepped, ...
     pprint("Starting learning loop ...")
+    start = datetime.now()
     while not converged and (max_iterations is None or i < max_iterations):
         # Initialize the synapses_modified array, assuming no synapses will be
         # modified.
@@ -327,16 +329,22 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
             if j % 1000 == 0:
                 pprint("########## %sth image of %sth iteration ##########" %
                        (j+1, i+1))
+                elapsed = datetime.now() - start
+                elapsed_h = elapsed.total_seconds() // 3600
+                elapsed_m = elapsed.total_seconds() // 60
+                elapsed_s = elapsed.seconds
+                pprint("########## Elapsed time: %02d:%02d:%02d ##########" %
+                       (elapsed_h, elapsed_m, elapsed_s))
                 pprint("Overlap:")
                 pprint(overlap[random_rows, random_cols])
                 pprint("Overlap sum:")
                 for l, key in enumerate(overlap_sum.iterkeys()):
                     if l in random_rows:
-                        pprint(overlap_sum[key][:100])
+                        pprint(overlap_sum[key][-100:])
                 pprint("Activity:")
                 for l, key in enumerate(activity.iterkeys()):
                     if l in random_rows:
-                        pprint(activity[key][:100])
+                        pprint(activity[key][-100:])
                 pprint("Active:")
                 pprint(active[random_rows, random_cols])
                 pprint("Min activity:")
