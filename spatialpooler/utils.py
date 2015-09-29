@@ -29,6 +29,46 @@ from PIL import Image
 import numpy as np
 
 
+class RingBuffer(np.ndarray):
+    'A multidimensional ring buffer.'
+
+    def __new__(cls, input_array):
+        obj = np.asarray(input_array).view(cls)
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+
+    def __array_wrap__(self, out_arr, context=None):
+        return np.ndarray.__array_wrap__(self, out_arr, context)
+
+    def extend(self, xs):
+        'Adds array xs to the ring buffer. If xs is longer than the ring '
+        'buffer, the last len(ring buffer) of xs are added the ring buffer.'
+        xs = np.asarray(xs)
+        if self.shape[1:] != xs.shape[1:]:
+            raise ValueError("Element's shape mismatch. RingBuffer.shape={}. "
+                             "xs.shape={}".format(self.shape, xs.shape))
+        len_self = len(self)
+        len_xs = len(xs)
+        if len_self <= len_xs:
+            xs = xs[-len_self:]
+            len_xs = len(xs)
+        else:
+            self[:-len_xs] = self[len_xs:]
+        self[-len_xs:] = xs
+
+    def append(self, x):
+        'Adds element x to the ring buffer.'
+        x = np.asarray(x)
+        if self.shape[1:] != x.shape:
+            raise ValueError("Element's shape mismatch. RingBuffer.shape={}. "
+                             "xs.shape={}".format(self.shape, x.shape))
+        self[:-1] = self[1:]
+        self[-1] = x
+
+
 def iter_columns(columns):
     """
     Go through the HTM column's matrix, yielding at each element the
@@ -46,7 +86,7 @@ def iter_columns(columns):
             yield y, x, syn_matrix
 
 
-def iter_synapses(synapses):
+def iter_synapses(synapses, only_potential=True):
     """
     Go through the matrix of synapse's permanences associated with a HTM
     column, yielding at each element the element's coordinates together
@@ -60,7 +100,8 @@ def iter_synapses(synapses):
     # for each element in the collection
     for y, syn_row in enumerate(synapses):
         for x, syn_perm in enumerate(syn_row):
-            yield y, x, syn_perm
+            if not only_potential or not np.isnan(syn_perm):
+                yield y, x, syn_perm
 
 
 def iter_neighbours(columns, y, x, distances, inhibition_radius):
@@ -77,7 +118,8 @@ def iter_neighbours(columns, y, x, distances, inhibition_radius):
                       distance[a, b, c, d] stores the euclidean distance from
                       the HTM column columns[a, b] to the HTM column
                       columns[c, d].
-    :param inhibition_radius: the inhibitionArea parameter of the BSP algorithm.
+    :param inhibition_radius: the inhibitionArea parameter of the BSP
+                              algorithm.
     :return: yields a tuple (y, x, syn_matrix), where y is the row index,
              x is the column index and syn_matrix is synapse's permanence
              matrix, all three of a particular HTM column that is neighbour of
@@ -106,7 +148,7 @@ def extract_patches(images, patch_shape, patches_nr=None,
     :param patch_shape: tuple (p,q) of two elements specifying the number of
                         rows (p) and columns (q) in a patch.
     :param patches_nr: amount of patches to generate.
-    :param to_bits: if True, convert patches' pixels to binary values. The 
+    :param to_bits: if True, convert patches' pixels to binary values. The
                     average pixel value per patch will be used as the
                     threshold, everything above it is 1, everything below it
                     is 0.
