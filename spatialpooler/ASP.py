@@ -225,7 +225,7 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
                    p_inc=0.02, p_dec=0.02, b_inc=0.005, p_mult=0.01,
                    min_activity_threshold=0.01, desired_activity_mult=0.05,
                    b_max=4, max_iterations=10000, cycles_to_save=100,
-                   output_file=None):
+                   output_file=None, activations_file=None):
     """
     Implements the main BSP loop (p. 3). It goes continually through the images
     set until convergence.
@@ -293,6 +293,10 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
     pprint("Calculating desired activity ...")
     desired_activity = desired_activity_mult * inhibition_area
     pprint("Desired activity: %s" % desired_activity)
+    # Initialize the activations matrix. This will be used to calculate the
+    # population and lifetime kurtoses.
+    activations = np.zeros(shape=(images.shape[0], shape[0], shape[1]),
+                           dtype=np.int)
 
     converged = False
     i = 0
@@ -326,6 +330,9 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
             active, activity =\
                 inhibit_columns(columns, distances, inhibition_area,
                                 overlap, activity, desired_activity)
+            # Store the post-inhibition overlap activity of each column as the
+            # sum of the overlap of the active columns.
+            activations[j, active] = overlap[active].sum()
             # calculate the min_activity matrix, ...
             min_activity =\
                 calculate_min_activity(columns, active, distances,
@@ -368,13 +375,17 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
         converged = test_for_convergence(synapses_modified)
         pprint("Iteration %s. Columns modified: %s" %
                (i, synapses_modified.sum()))
-        if output_file is not None and (i % cycles_to_save == 0 or converged):
-            with open(output_file, 'wb') as fp:
-                pickle.dump(columns, fp)
+        if i % cycles_to_save == 0 or converged:
+            if output_file is not None:
+                with open(output_file, 'wb') as fp:
+                    pickle.dump(columns, fp)
+            if activations_file is not None:
+                with open(activations_file, 'wb') as fp:
+                    pickle.dump(activations, fp)
         # Increment iterations counter.
         i += 1
 
-    return columns
+    return columns, activations
 
 if __name__ == '__main__':
     import sys
@@ -388,6 +399,13 @@ if __name__ == '__main__':
         output_file = sys.argv[arg_index + 1]
     else:
         sys.exit('The parameter --output_file is mandatory.')
+
+    # Check whether the --activations_file command line parameter was provided.
+    activations_file = None
+    if '--activations_file' in sys.argv:
+        # Get the command line parameter value.
+        arg_index = sys.argv.index('--activations_file')
+        activations_file = sys.argv[arg_index + 1]
 
     # Check whether the --images_path command line parameter was provided.
     images_path = '.'
@@ -441,6 +459,5 @@ if __name__ == '__main__':
                              b_inc=0.005, p_mult=0.01,
                              min_activity_threshold=0.01,
                              desired_activity_mult=0.05, b_max=4,
-                             output_file=output_file)
-    with open(output_file, 'wb') as fp:
-        pickle.dump(columns, fp)
+                             output_file=output_file,
+                             activations_file=activations_file)

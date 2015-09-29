@@ -214,7 +214,6 @@ def grayscale_to_bits(images, threshold_method='mean'):
     return ret_val
 
 
-
 def load_images(images_path, extensions=('.png',), img_shape=(256, 256)):
     """
     Loads images from images_path into a np.array.
