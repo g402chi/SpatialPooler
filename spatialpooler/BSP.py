@@ -49,7 +49,7 @@ from pprint import pprint
 import numpy as np
 import numexpr as ne
 
-from utils import read_input, iter_columns, iter_synapses
+from utils import read_input, iter_columns, iter_synapses, RingBuffer
 from common import (update_inhibition_area, calculate_min_activity,
                     inhibit_columns, initialise_synapses, test_for_convergence)
 
@@ -189,7 +189,7 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     # For each column [y, x] ...
     for y, x, syn_matrix in iter_columns(columns):
         # increment the boost for [y, x] if the activity of [y, x] is too low,
-        if sum(activity[y, x]) < min_activity[y, x]:
+        if activity[y, x].sum() < min_activity[y, x]:
             boost[y, x] += b_inc
         # or reset it to 1 otherwise.
         else:
@@ -197,7 +197,7 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
 
         # Finally, if the amount of times [y, x] was over the overlapThreshold
         # in the last 1000 iterations is below the minimum activity, ...
-        if sum(overlap_sum[y, x]) < min_activity[y, x]:
+        if overlap_sum[y, x].sum() < min_activity[y, x]:
             # for each neighbour [u, v] of [y, x], ...
             # (NOTE: by definition, perm = syn_matrix[u, v])
             for u, v, perm in iter_synapses(syn_matrix):
@@ -261,10 +261,11 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
     # Initialize boost matrix.
     boost = np.ones(shape=shape[:2])
     # Initialize overlap_sum dictionary.
-    part_deque = partial(deque, maxlen=1000)
-    overlap_sum = defaultdict(part_deque)
+    part_rbuffer = partial(RingBuffer,
+                           input_array=np.zeros(1000, dtype=np.bool))
+    overlap_sum = defaultdict(part_rbuffer)
     # Initialize activity dictionary.
-    activity = defaultdict(part_deque)
+    activity = defaultdict(part_rbuffer)
 
     # Initialize columns and distances matrices.
     pprint("Initializing synapses ...")
@@ -278,7 +279,7 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
     pprint(distances[random_rows, random_cols])
     # Calculate the inhibition_area parameter.
     pprint("Calculating inhibition area ...")
-    inhibition_area = update_inhibition_area(columns)
+    inhibition_area = update_inhibition_area(columns, connect_threshold)
     pprint("Inhibition area: %s" % inhibition_area)
     # Calculate the desired activity in a inhibition zone.
     pprint("Calculating desired activity ...")
@@ -317,7 +318,8 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
                                           p_dec, activity, overlap_sum,
                                           min_activity, boost, b_inc, p_mult)
             # Update the inhibition_area parameter.
-            inhibition_area = update_inhibition_area(columns)
+            inhibition_area = update_inhibition_area(columns,
+                                                     connect_threshold)
             # Update the desired activity in a inhibition zone.
             desired_activity = desired_activity_mult * inhibition_area
             # Print a snapshot of the model state every 1000 images.
@@ -329,11 +331,11 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
                 pprint("Overlap sum:")
                 for l, key in enumerate(overlap_sum.iterkeys()):
                     if l in random_rows:
-                        pprint(overlap_sum[key])
+                        pprint(overlap_sum[key][:100])
                 pprint("Activity:")
                 for l, key in enumerate(activity.iterkeys()):
                     if l in random_rows:
-                        pprint(activity[key])
+                        pprint(activity[key][:100])
                 pprint("Active:")
                 pprint(active[random_rows, random_cols])
                 pprint("Min activity:")
