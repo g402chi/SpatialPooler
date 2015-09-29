@@ -168,44 +168,45 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     """
     # Assume no synapse will be modified.
     synapse_modified = False
-    # For each column [y, x] ...
-    for y, x, syn_matrix in iter_columns(columns):
-        # if [y, x] is active in this iteration, ...
-        if active[y, x]:
-            # for each synapse [u, v] of [y, x] with permanence perm, ...
-            # (NOTE: by definition, perm = syn_matrix[u, v])
-            for u, v, perm in iter_synapses(syn_matrix):
-                # increase perm, truncated at 1, if input_vector[u, v]==1, ...
-                if input_vector[u, v]:
-                    syn_matrix[u, v] = min(perm + p_inc, 1)
-                # or decrease perm, truncated at 0, if input_vector[u, v] == 0.
-                else:
-                    syn_matrix[u, v] = max(perm - p_dec, 0)
-            # Set synapse_modified to True if any synapse was modified by this
-            # algorithm.
-            if syn_matrix[u, v] != perm:
-                synapse_modified = True
+    # For each active column [y, x] ...
+    for _, _, syn_matrix in iter_columns(columns, active_matrix=active):
+        # for each potential synapse [u, v] of [y, x] with permanence perm,
+        # (NOTE: by definition, perm = syn_matrix[u, v])
+        for u, v, perm in iter_synapses(syn_matrix):
+            s = (u, v)
+            # increase perm, truncated at 1, if input_vector[u, v]==1, ...
+            if input_vector[s]:
+                syn_matrix[s] = min(perm + p_inc, 1)
+            # or decrease perm, truncated at 0, if input_vector[u, v] == 0.
+            else:
+                syn_matrix[s] = max(perm - p_dec, 0)
+        # Set synapse_modified to True if any synapse was modified by this
+        # algorithm.
+        if syn_matrix[s] != perm:
+            synapse_modified = True
 
     # For each column [y, x] ...
     for y, x, syn_matrix in iter_columns(columns):
+        c = (y, x)
         # increment the boost for [y, x] if the activity of [y, x] is too low,
-        if activity[y, x].sum() < min_activity[y, x]:
-            boost[y, x] += b_inc
+        if activity[c].sum() < min_activity[c]:
+            boost[c] += b_inc
         # or reset it to 1 otherwise.
         else:
-            boost[y, x] = 1
+            boost[c] = 1
 
         # Finally, if the amount of times [y, x] was over the overlapThreshold
         # in the last 1000 iterations is below the minimum activity, ...
-        if overlap_sum[y, x].sum() < min_activity[y, x]:
-            # for each neighbour [u, v] of [y, x], ...
+        if overlap_sum[c].sum() < min_activity[c]:
+            # for each potential synapse [u, v] of [y, x], ...
             # (NOTE: by definition, perm = syn_matrix[u, v])
             for u, v, perm in iter_synapses(syn_matrix):
+                s = (u, v)
                 # multiply perm by p_mult, truncated at 1.
-                syn_matrix[u, v] = min(perm * p_mult, 1)
+                syn_matrix[s] = min(perm * p_mult, 1)
                 # Set synapse_modified to True if any synapse was modified by
                 # this algorithm.
-                if syn_matrix[u, v] != perm:
+                if syn_matrix[s] != perm:
                     synapse_modified = True
 
     # Return the columns array, with its synapses modified.

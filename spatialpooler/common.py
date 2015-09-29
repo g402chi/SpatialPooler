@@ -433,26 +433,26 @@ def calculate_min_activity(columns, active, distances, inhibition_area,
     # Both approaches are equivalent, since the inhibition area is a circle.
     inhibition_radius = 4 * np.sqrt(inhibition_area/np.pi)
 
-    # For each column [y, x], ...
-    for y, x, _ in iter_columns(columns):
-        # if [y, x] is active this itearation, ...
-        if active[y, x]:
-            max_activity = 0
-            # get the neighbours of [y, x] ...
-            neighbours = iter_neighbours(columns, y, x, distances,
-                                         inhibition_radius)
-            # and for each neighbour [u, v] of [y, x], ...
-            for u, v, _ in neighbours:
-                # calculate the how many times [u, v] was active during the
-                # last 1000 iterations, ...
-                activity_count = activity[u, v].sum()
-                # and choose the maximum count among all the neighbours of
-                # [y, x].
-                if activity_count > max_activity:
-                    max_activity = activity_count
-            # Finally, scale the maximum activity count among the neighbours of
-            # [y, x] by min_activity_threshold.
-            min_activity[y, x] = max_activity * min_activity_threshold
+    # For each active column [y, x], ...
+    for y, x, _ in iter_columns(columns, active_matrix=active):
+        c = (y, x)
+        max_activity = 0
+        # get the neighbours of [y, x] ...
+        neighbours = iter_neighbours(columns, y, x, distances,
+                                     inhibition_radius)
+        # and for each neighbour [u, v] of [y, x], ...
+        for u, v, _ in neighbours:
+            n = (u, v)
+            # calculate the how many times [u, v] was active during the
+            # last 1000 iterations, ...
+            activity_count = activity[n].sum()
+            # and choose the maximum count among all the neighbours of
+            # [y, x].
+            if activity_count > max_activity:
+                max_activity = activity_count
+        # Finally, scale the maximum activity count among the neighbours of
+        # [y, x] by min_activity_threshold.
+        min_activity[c] = max_activity * min_activity_threshold
 
     return min_activity
 

@@ -173,28 +173,25 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     synapse_modified = False
     mean_input = np.nanmean(input_vector)
 
-    # For each column [y, x] ...
-    for y, x, syn_matrix in iter_columns(columns):
-        c = (y, x)
-        # if [y, x] is active in this iteration, ...
-        if active[c]:
-            # for each potential synapse [u, v] of [y, x] with permanence perm,
-            # (NOTE: by definition, perm = syn_matrix[u, v])
-            for u, v, perm in iter_synapses(syn_matrix):
-                s = (u, v)
-                if (input_vector[s] > mean_input and
-                        perm >= connect_threshold):
-                    syn_matrix[s] = min(perm + p_inc, 1)
-                elif (input_vector[s] > mean_input and
-                        perm < connect_threshold):
-                    syn_matrix[s] = min(perm + p_inc,
-                                        connect_threshold - p_inc)
-                else:
-                    syn_matrix[s] = max(perm - p_dec, 0)
-                # Set synapse_modified to True if any synapse was modified by
-                # this algorithm.
-                if syn_matrix[s] != perm:
-                    synapse_modified = True
+    # For each active column [y, x] ...
+    for _, _, syn_matrix in iter_columns(columns, active_matrix=active):
+        # for each potential synapse [u, v] of [y, x] with permanence perm,
+        # (NOTE: by definition, perm = syn_matrix[u, v])
+        for u, v, perm in iter_synapses(syn_matrix):
+            s = (u, v)
+            if (input_vector[s] > mean_input and
+                    perm >= connect_threshold):
+                syn_matrix[s] = min(perm + p_inc, 1)
+            elif (input_vector[s] > mean_input and
+                    perm < connect_threshold):
+                syn_matrix[s] = min(perm + p_inc,
+                                    connect_threshold - p_inc)
+            else:
+                syn_matrix[s] = max(perm - p_dec, 0)
+            # Set synapse_modified to True if any synapse was modified by
+            # this algorithm.
+            if syn_matrix[s] != perm:
+                synapse_modified = True
 
     for y, x, syn_matrix in iter_columns(columns):
         c = (y, x)
