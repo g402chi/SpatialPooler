@@ -69,12 +69,16 @@ class RingBuffer(np.ndarray):
         self[-1] = x
 
 
-def iter_columns(columns):
+def iter_columns(columns, active_matrix=None):
     """
     Go through the HTM column's matrix, yielding at each element the
     element's coordinates together with the synapse's permanence matrix
     associated with that particular column.
     :param columns: the matrix of HTM columns.
+    :param active_matrix: boolean matrix of shape
+                          (columns.shape[0], columns.shape[1]). If provided,
+                          only return columns y, x where
+                          active_matrix[y, x] == True.
     :return: yields a tuple (y, x, syn_matrix), where y is the row index,
              x is the column index and syn_matrix is synapse's permanence
              matrix, all three of a particular HTM column.
@@ -83,7 +87,8 @@ def iter_columns(columns):
     # for each element in the collection
     for y, col_row in enumerate(columns):
         for x, syn_matrix in enumerate(col_row):
-            yield y, x, syn_matrix
+            if active_matrix is None or active_matrix[y, x]:
+                yield y, x, syn_matrix
 
 
 def iter_synapses(synapses, only_potential=True):
@@ -92,6 +97,7 @@ def iter_synapses(synapses, only_potential=True):
     column, yielding at each element the element's coordinates together
     with the synapse's permanence value.
     :param synapses: the matrix of synapse's permanences.
+    :param only_potential: if True (default), only yield potential synapses.
     :return: yields a tuple (y, x, syn_perm), where y is the row index,
              x is the column index and syn_perm is synapse's permanence
              value, all three of a particular HTM synapse.
