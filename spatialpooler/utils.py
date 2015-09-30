@@ -143,7 +143,7 @@ def iter_neighbours(columns, y, x, distances, inhibition_radius):
             yield u, v, syn_matrix
 
 
-def extract_patches(images, patch_shape, patches_nr):
+def extract_patches(images, patch_shape, patches_nr, randomize=True):
     """
     Extracts patches_nr patches of patch_shape shape from the images. The
     patches are taken randomly from the whole set of images.
@@ -184,8 +184,30 @@ def extract_patches(images, patch_shape, patches_nr):
                 all_patches[l] = patch
                 l += 1
 
-    return all_patches[np.random.choice(all_patches.shape[0], size=patches_nr,
-                                        replace=False)]
+    if randomize:
+        return all_patches[np.random.choice(all_patches.shape[0],
+                                            size=patches_nr, replace=False)]
+    else:
+        return all_patches[:patches_nr]
+
+
+def rebuild_imgs_from_patches(patches, img_shape):
+    patch_shape = patches.shape[1:]
+    patches_per_row = img_shape[1] // patch_shape[1]
+    patches_per_column = img_shape[0] // patch_shape[0]
+    patches_per_image = patches_per_row * patches_per_column
+
+    images_nr = patches.shape[0]//patches_per_image
+    images = np.zeros((images_nr, img_shape[0], img_shape[1]))
+
+    l = 0
+    for i in range(images_nr):
+        for j in range(0, img_shape[0], patch_shape[0]):
+            for k in range(0, img_shape[1], patch_shape[1]):
+                images[i, j:j+patch_shape[0], k:k+patch_shape[1]] = patches[l]
+                l += 1
+
+    return images
 
 
 def grayscale_to_bits(images, threshold_method='mean'):
