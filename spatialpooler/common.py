@@ -47,6 +47,41 @@ import numexpr as ne
 from utils import euclidean_dist, iter_columns, iter_neighbours
 
 
+def calculate_distances(shape):
+    # Generate the coordinate matrices for the colums and synapses.
+    # This will be used to calculate the distance from each HTM column
+    # to each input.
+    col_coords = np.asarray([[i, j] for i in range(shape[0])
+                             for j in range(shape[1])])
+    syn_coords = col_coords.copy()
+
+    # Calculate coordinate distances. This will result in a matrix of shape
+    # (shape[0]*shape[1], shape[0]*shape[1]).
+    distances = np.asarray([euclidean_dist(syn_coords, cc)
+                            for cc in col_coords])
+    # Flatten the distances array so it can be directly compared with
+    # the other arrays.
+    distances = distances.flatten()
+    # Reshape the distance matrix. The reshaping takes elements from left to
+    # right, from last dimension to first dimension.
+    # So if, one wants to reshape an array
+    # [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    # to have shape (2, 2, 2, 2), the result will be an array
+    # [
+    #   [
+    #     [[1, 2], [3, 4]]
+    #     [[5, 6], [7, 8]]
+    #   ],
+    #   [
+    #     [[9, 10], [11, 12]]
+    #     [[13, 14], [15, 16]]
+    #   ]
+    # ]
+    distances = distances.reshape(shape)
+
+    return distances
+
+
 def initialise_synapses(shape, p_connect, connect_threshold):
     """
     Implements the initializeSynapses function from the paper (p. 3).
@@ -100,28 +135,14 @@ def initialise_synapses(shape, p_connect, connect_threshold):
     disconnected_perm = np.random.uniform(low=min_perm, high=connect_threshold,
                                           size=flattened_size)
 
-    # Generate the coordinate matrices for the colums and synapses.
-    # This will be used to calculate the distance from each HTM column
-    # to each input.
-    col_coords = np.asarray([[i, j] for i in range(shape[0])
-                             for j in range(shape[1])])
-    syn_coords = col_coords.copy()
-
-    # Calculate coordinate distances. This will result in a matrix of shape
-    # (shape[0]*shape[1], shape[0]*shape[1]).
-    distances = np.asarray([euclidean_dist(syn_coords, cc)
-                            for cc in col_coords])
-    # Flatten the distances array so it can be directly compared with
-    # the other arrays.
-    distances = distances.flatten()
-
+    distances = calculate_distances(shape)
     # Obtain the biggest value in the distances array.
     max_distance = distances.max()
     # Generate the probabilities of a potential synapse being connected
     # as the inverse of the distance normalized in the range [0, 1],
     # i.e., the synapses nearer to their respective HTM columns will have
     # an associated probaility nearer 1 and vice-versa.
-    conn_prob_matrix = 1 - distances/max_distance
+    conn_prob_matrix = 1 - distances.flatten()/max_distance
 
     # Draw a random sample of the same size as the flattened column matrix.
     random_sample = np.random.uniform(size=flattened_size)
@@ -136,22 +157,6 @@ def initialise_synapses(shape, p_connect, connect_threshold):
     # Assign the permanences of the unconnected synapses.
     columns[disconnected_pool] = disconnected_perm[disconnected_pool]
 
-    # Reshape the distance matrix. The reshaping takes elements from left to
-    # right, from last dimension to first dimension.
-    # So if, one wants to reshape an array
-    # [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-    # to have shape (2, 2, 2, 2), the result will be an array
-    # [
-    #   [
-    #     [[1, 2], [3, 4]]
-    #     [[5, 6], [7, 8]]
-    #   ],
-    #   [
-    #     [[9, 10], [11, 12]]
-    #     [[13, 14], [15, 16]]
-    #   ]
-    # ]
-    distances = distances.reshape(shape)
     # Reshape the columns matrix.
     columns = columns.reshape(shape)
 
@@ -257,10 +262,8 @@ def create_min_max_matrices(coord_matrix, syn_matrix, connect_threshold):
     # synapse's coordinates)
     min_matrix = (coord_matrix *
                   ne.evaluate('syn_matrix >= connect_threshold'))
-    # set all 0 elements to np.nan
-    min_matrix[min_matrix == 0] = np.nan
-    # set all np.nan elements to +infinity
-    min_matrix[np.isnan(min_matrix)] = np.infty
+    # set all 0 and np.nan elements to +infinity
+    min_matrix[(min_matrix == 0) | np.isnan(min_matrix)] = np.infty
 
     # (The elements in max_matrix will be equal to coord_matrix wherever
     # syn_matrix >= connect_threshold and equal to -infinity everywhere
@@ -268,10 +271,8 @@ def create_min_max_matrices(coord_matrix, syn_matrix, connect_threshold):
     # synapse's coordinates)
     max_matrix = (coord_matrix *
                   ne.evaluate('syn_matrix >= connect_threshold'))
-    # set all 0 elements to np.nan
-    max_matrix[max_matrix == 0] = np.nan
-    # set all np.nan elements to -infinity
-    max_matrix[np.isnan(max_matrix)] = -np.infty
+    # set all 0 and np.nan elements to -infinity
+    max_matrix[(min_matrix == 0) | np.isnan(min_matrix)] = -np.infty
     return min_matrix, max_matrix
 
 
