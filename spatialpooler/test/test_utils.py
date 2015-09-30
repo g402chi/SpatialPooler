@@ -26,9 +26,9 @@ import unittest
 
 import numpy as np
 
-from bsp import utils
+from spatialpooler import utils
 import os
-import bsp
+import spatialpooler
 
 
 class UtilsTest(unittest.TestCase):
@@ -46,7 +46,7 @@ class UtilsTest(unittest.TestCase):
                          [[1.41421356, 1.], [1., 0.]]
                         ]
                        ])
-        bsp_path = os.path.dirname(bsp.__file__)
+        bsp_path = os.path.dirname(spatialpooler.__file__)
         root_dir = os.path.abspath(os.path.join(bsp_path, os.pardir))
         self.images_path = os.path.join(root_dir, 'images')
 

@@ -27,10 +27,9 @@ import unittest
 import numpy as np
 import numexpr as ne
 
-from bsp import BSP
+from spatialpooler import BSP
 from collections import defaultdict, deque
 from functools import partial
-from astropy.io.ascii.core import Column
 
 
 class BSPTest(unittest.TestCase):
