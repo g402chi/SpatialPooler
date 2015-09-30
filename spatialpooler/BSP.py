@@ -315,9 +315,9 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
             active, activity =\
                 inhibit_columns(columns, distances, inhibition_area,
                                 overlap, activity, desired_activity)
-            # Store the post-inhibition activity of each column as the sum of
-            # the active synapses.
-            activations[j] = active.sum(axis=(2, 3))
+            # Store the post-inhibition overlap activity of each column as the
+            # sum of the overlap of the active columns.
+            activations[j, active] = overlap[active].sum()
             # calculate the min_activity matrix, ...
             min_activity =\
                 calculate_min_activity(columns, active, distances,
