@@ -32,8 +32,10 @@ import numpy as np
 class RingBuffer(np.ndarray):
     'A multidimensional ring buffer.'
 
-    def __new__(cls, input_array):
+    def __new__(cls, input_array, copy=False):
         obj = np.asarray(input_array).view(cls)
+        if copy:
+            obj = obj.copy()
         return obj
 
     def __array_finalize__(self, obj):
