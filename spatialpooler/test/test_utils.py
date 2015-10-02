@@ -86,13 +86,13 @@ class UtilsTest(unittest.TestCase):
 
     def test_extract_patches(self):
         images = np.array([[range(10)]*10]*100)
-        patches = utils.extract_patches(images, (3, 3), patches_nr=15)
+        patches = utils.extract_patches(images, (2, 2), patches_nr=15)
         for patch in patches:
             patch_in_image = False
             for image in images:
-                for y, row in enumerate(image[:-2]):
-                    for x, _ in enumerate(row[:-2]):
-                        if (patch == image[y:y+3, x:x+3]).all():
+                for y, row in enumerate(image[:-1]):
+                    for x, _ in enumerate(row[:-1]):
+                        if (patch == image[y:y+2, x:x+2]).all():
                             patch_in_image = True
                             break
                     if patch_in_image:
@@ -103,10 +103,10 @@ class UtilsTest(unittest.TestCase):
                     break
             self.assertTrue(patch_in_image)
 
-    def test_extract_patches_bits(self):
+    def test_grayscale_to_bits(self):
         images = np.array([[range(10)]*10]*100)
-        patches = utils.extract_patches(images, (3, 3), patches_nr=15,
-                                        to_bits=True)
+        patches = utils.extract_patches(images, (2, 2), patches_nr=15)
+        patches = utils.grayscale_to_bits(patches)
         for patch in patches:
             self.assertIsInstance(patch, np.ndarray)
             self.assertEqual(patch.dtype, np.bool)

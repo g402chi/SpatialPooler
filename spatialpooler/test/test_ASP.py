@@ -30,11 +30,11 @@ import numexpr as ne
 from collections import defaultdict
 from functools import partial
 
-from spatialpooler import BSP
+from spatialpooler import ASP
 from spatialpooler.utils import RingBuffer
 
 
-class BSPTest(unittest.TestCase):
+class ASPTest(unittest.TestCase):
     def setUp(self):
         unittest.TestCase.setUp(self)
         self.columns = np.zeros(shape=(2, 2, 2, 2))
@@ -56,17 +56,12 @@ class BSPTest(unittest.TestCase):
         min_overlap = 1
         connect_threshold = 0.1
         boost = np.array([[1, 1], [1, 1]])
-        part_deque = partial(RingBuffer, input_array=np.zeros(2), copy=True)
-        overlap_sum = defaultdict(part_deque)
-        overlap, overlap_sum =\
-            BSP.calculate_overlap(input_vector, self.columns, min_overlap,
-                                  connect_threshold, boost, overlap_sum)
+        overlap =\
+            ASP.calculate_overlap(input_vector, self.columns, min_overlap,
+                                  connect_threshold, boost)
         self.assertIsInstance(overlap, np.ndarray)
         self.assertEqual(overlap.shape, (2, 2))
-        self.assertIsInstance(overlap_sum, defaultdict)
         self.assertListEqual(overlap.tolist(), [[1., 0.], [0., 0.]])
-        self.assertIsInstance(overlap_sum[0, 0], RingBuffer)
-        self.assertListEqual(list(overlap_sum[0, 0]), [0, 1])
 
     def test_learn_synapse_connections(self):
         active = np.array([[1, 1], [1, 1]])
@@ -75,22 +70,23 @@ class BSPTest(unittest.TestCase):
         p_dec = 0.1
         part_deque = partial(RingBuffer, input_array=np.zeros(2), copy=True)
         activity = defaultdict(part_deque)
-        overlap_sum = defaultdict(part_deque)
+        connect_threshold = 0.9
         min_activity = np.array([[1, 0], [0, 0]])
         boost = np.array([[1, 1], [1, 1]])
         b_inc = 1
         p_mult = 1
+        b_max = 1
         columns, synapse_modified =\
-            BSP.learn_synapse_connections(self.columns, active,
-                                          input_vector, p_inc, p_dec,
-                                          activity, overlap_sum,
-                                          min_activity, boost, b_inc,
-                                          p_mult)
+            ASP.learn_synapse_connections(self.columns, active, input_vector,
+                                          p_inc, p_dec, activity, min_activity,
+                                          boost, b_inc, p_mult,
+                                          connect_threshold, self.distances,
+                                          b_max)
         self.assertIsInstance(columns, np.ndarray)
         self.assertEqual(columns.shape, (2, 2, 2, 2))
         self.assertListEqual(columns.tolist(), [
                                                 [
-                                                 [[0.1, 0.], [0., 0.]],
+                                                 [[1, 0.], [0., 0.]],
                                                  [[0.1, 0.], [0., 0.]]
                                                 ],
                                                 [
@@ -99,7 +95,7 @@ class BSPTest(unittest.TestCase):
                                                 ]
                                                ])
         self.assertIsInstance(synapse_modified, types.BooleanType)
-        self.assertFalse(synapse_modified)
+        self.assertTrue(synapse_modified)
 
     def test_spatial_pooler(self,):
         images = np.zeros(shape=(10, 2, 2))
@@ -111,14 +107,14 @@ class BSPTest(unittest.TestCase):
         b_inc = 0.005
         p_mult = 0.01
         min_activity_threshold = 0.01
-        min_overlap = 3,
+        b_max = 1,
         desired_activity_mult = 0.05
         max_iterations = 1000
-        cols = BSP.spatial_pooler(images, shape, p_connect,
+        cols = ASP.spatial_pooler(images, shape, p_connect,
                                   connect_threshold, p_inc,
                                   p_dec, b_inc, p_mult,
-                                  min_activity_threshold, min_overlap,
-                                  desired_activity_mult,
+                                  min_activity_threshold,
+                                  desired_activity_mult, b_max,
                                   max_iterations)
         self.assertIsInstance(cols, np.ndarray)
         self.assertEqual(cols.shape, shape)
