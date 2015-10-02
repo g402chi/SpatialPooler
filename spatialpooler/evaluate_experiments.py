@@ -23,15 +23,18 @@ THE SOFTWARE.
 ================================LICENSE======================================
 """
 from collections import defaultdict
+import cPickle as pickle
 from functools import partial
 from pprint import pprint
+import os
 
 import numpy as np
 
 from ASP import calculate_overlap as asp_overlap
 from BSP import calculate_overlap as bsp_overlap
 from common import calculate_distances, inhibit_columns, update_inhibition_area
-from utils import RingBuffer, read_input
+from utils import (extract_patches, load_images, RingBuffer, read_input,
+                   rebuild_imgs_from_patches)
 
 
 def calculate_lifetime_kurtosis(activations):
@@ -41,10 +44,10 @@ def calculate_lifetime_kurtosis(activations):
     # matrix.
     activations = activations.reshape(shape[0], shape[1] * shape[2])
     # For each column, calculate its activation'S mean  for all images.
-    col_mean_act = activations.mean(axis=0)
-    # For each column, calculate its activation'S standard devition for all
+    col_mean_act = np.nanmean(activations, axis=0)
+    # For each column, calculate its activation's standard deviation for all
     # images.
-    col_std_act = activations.std(axis=0)
+    col_std_act = np.nanstd(activations, axis=0)
     # For each column, normalize its activation to mean 0 and std 1.
     col_life_kurtosis = (activations - col_mean_act) / col_std_act
     # For each column, calculate its kurtosis.
@@ -62,10 +65,10 @@ def calculate_population_kurtosis(activations):
     # matrix.
     activations = activations.reshape(shape[0], shape[1] * shape[2])
     # For each image, calculate its activation'S mean  for all columns.
-    img_mean_act = activations.mean(axis=1)
-    # For each image, calculate its activation'S standard devition for all
+    img_mean_act = np.nanmean(activations, axis=1)
+    # For each image, calculate its activation's standard deviation for all
     # images.
-    img_std_act = activations.std(axis=1)
+    img_std_act = np.nanstd(activations, axis=1)
     # For each image, normalize its activation to mean 0 and std 1.
     img_pop_kurtosis = ((activations.T - img_mean_act) / img_std_act).T
     # For each image, calculate its kurtosis.
@@ -76,15 +79,20 @@ def calculate_population_kurtosis(activations):
     return img_pop_kurtosis.sum()/img_pop_kurtosis.shape[0]
 
 
-def asp_reconstruct_images(images, columns, connect_threshold,
-                           desired_activity_mult, min_overlap):
+def reconstruct_images(alg, images, columns, connect_threshold,
+                       desired_activity_mult, min_overlap,
+                       out_dir=None):
     shape = columns.shape
+    img_shape = shape[:2]
     # Initialize boost matrix.
     boost = np.ones(shape=shape[:2])
     part_rbuffer = partial(RingBuffer,
                            input_array=np.zeros(1, dtype=np.bool))
     # Initialize activity dictionary.
     activity = defaultdict(part_rbuffer)
+    if alg == 'bsp':
+        # Initialize overlap_sum dictionary.
+        overlap_sum = defaultdict(part_rbuffer)
 
     distances = calculate_distances(shape)
     # Calculate the inhibition_area parameter.
@@ -93,86 +101,130 @@ def asp_reconstruct_images(images, columns, connect_threshold,
     desired_activity = desired_activity_mult * inhibition_area
 
     reconstructions = np.zeros_like(images)
+    # Initialize the activations matrix. This will be used to calculate the
+    # population and lifetime kurtoses.
+    activations = np.zeros(shape=(images.shape[0], shape[0], shape[1]),
+                           dtype=np.int)
 
     for i, image, _ in read_input(images):
-        # calculate the overlap of the columns with the image.
-        # (this is a simple count of the number of its connected synapses
-        # that are receiving active input (p. 3)), ...
-        overlap = asp_overlap(image, columns, min_overlap,
-                              connect_threshold, boost)
-        # force sparsity by inhibiting columns, ...
-        active, _ = inhibit_columns(columns, distances, inhibition_area,
-                                    overlap, activity, desired_activity)
+        if alg == 'bsp':
+            overlap, _ = bsp_overlap(image, columns, min_overlap,
+                                     connect_threshold, boost, overlap_sum)
+            # force sparsity by inhibiting columns, ...
+            active, activity =\
+                inhibit_columns(columns, distances, inhibition_area,
+                                overlap, activity, desired_activity)
+        elif alg == 'asp':
+            # calculate the overlap of the columns with the image.
+            # (this is a simple count of the number of its connected synapses
+            # that are receiving active input (p. 3)), ...
+            overlap = asp_overlap(image, columns, min_overlap,
+                                  connect_threshold, boost)
+            # force sparsity by inhibiting columns, ...
+            active, _ = inhibit_columns(columns, distances, inhibition_area,
+                                        overlap, activity, desired_activity)
         reconstructions[i] = columns[active].sum()
+        # Store the post-inhibition overlap activity of each column as the
+        # sum of the overlap of the active columns.
+        activations[i, active] = overlap[active]
+
+    if out_dir is not None:
+        if not os.path.exists(out_dir):
+            os.mkdir(out_dir)
+        reconstructions = rebuild_imgs_from_patches(reconstructions, img_shape)
+        for i, reconstruct_img in enumerate(reconstructions):
+            with open(os.path.join(out_dir, 'rec_img_%d' % i), 'wb') as fp:
+                pickle.dump(reconstruct_img, fp)
+    return activations
 
 
-def bsp_reconstruct_images(images, columns, connect_threshold,
-                           desired_activity_mult, min_overlap):
-    shape = columns.shape
-    # Initialize boost matrix.
-    boost = np.ones(shape=shape[:2])
-    part_rbuffer = partial(RingBuffer,
-                           input_array=np.zeros(1, dtype=np.bool))
-    # Initialize activity dictionary.
-    activity = defaultdict(part_rbuffer)
-    # Initialize overlap_sum dictionary.
-    overlap_sum = defaultdict(part_rbuffer)
+def save_activations(activations, columns_file):
+    dir_name = os.path.dirname(columns_file)
+    base_name = os.path.basename(columns_file)
+    act_out_file = os.path.join(dir_name, 'activations_%s' % base_name)
+    with open(act_out_file, 'wb') as fp:
+        pickle.dump(activations, fp)
 
-    distances = calculate_distances(shape)
-    # Calculate the inhibition_area parameter.
-    inhibition_area = update_inhibition_area(columns, connect_threshold)
-    # Calculate the desired activity in a inhibition zone.
-    desired_activity = desired_activity_mult * inhibition_area
 
-    reconstructions = np.zeros_like(images)
-    for i, image, _ in read_input(images):
-        # calculate the overlap of the columns with the image.
-        # (this is a simple count of the number of its connected synapses
-        # that are receiving active input (p. 3)), ...
-        overlap = bsp_overlap(image, columns, min_overlap,
-                              connect_threshold, boost, overlap_sum)
-        # force sparsity by inhibiting columns, ...
-        active, activity = inhibit_columns(columns, distances, inhibition_area,
-                                           overlap, activity, desired_activity)
-        reconstructions[i] = columns[active].sum()
+def calculate_print_stats(activations):
+    pop_kurtosis = calculate_population_kurtosis(activations)
+    lif_kurtosis = calculate_lifetime_kurtosis(activations)
+    pprint("BSP lifetime kurtosis: %0.4f" % pop_kurtosis)
+    pprint("BSP population kurtosis: %0.4f" % lif_kurtosis)
+
 
 
 if __name__ == '__main__':
-    import cPickle as pickle
     import sys
 
-    # Check whether the --bsp_activations_file command line parameter was
+    # Check whether the --imgs_dir command line parameter was
     # provided.
-    bsp_activations_file = None
-    if '--bsp_activations_file' in sys.argv:
+    imgs_dir = None
+    if '--imgs_dir' in sys.argv:
         # Get the command line parameter value.
-        arg_index = sys.argv.index('--bsp_activations_file')
-        bsp_activations_file = sys.argv[arg_index + 1]
+        arg_index = sys.argv.index('--imgs_dir')
+        imgs_dir = sys.argv[arg_index + 1]
+    else:
+        sys.exit('The --imgs_dir parameter is mandatory.')
 
-    # Check whether the --asp_activations_file command line parameter was
+    # Check whether the --bsp_columns_file command line parameter was
     # provided.
-    asp_activations_file = None
-    if '--asp_activations_file' in sys.argv:
+    bsp_columns_file = None
+    if '--bsp_columns_file' in sys.argv:
         # Get the command line parameter value.
-        arg_index = sys.argv.index('--asp_activations_file')
-        asp_activations_file = sys.argv[arg_index + 1]
+        arg_index = sys.argv.index('--bsp_columns_file')
+        bsp_columns_file = sys.argv[arg_index + 1]
 
-    if bsp_activations_file is None and asp_activations_file is None:
-        sys.exit('One or both of the --bsp_activations_file'
-                 ' --asp_activations_fileand must be provided.')
+    # Check whether the --asp_columns_file command line parameter was
+    # provided.
+    asp_columns_file = None
+    if '--asp_columns_file' in sys.argv:
+        # Get the command line parameter value.
+        arg_index = sys.argv.index('--asp_columns_file')
+        asp_columns_file = sys.argv[arg_index + 1]
 
-    if bsp_activations_file is not None:
-        with open(bsp_activations_file, 'rb') as fp:
-            bsp_activations = pickle.load(fp)
-        bsp_pop_kurtosis = calculate_population_kurtosis(bsp_activations)
-        bsp_lif_kurtosis = calculate_lifetime_kurtosis(bsp_activations)
-        pprint("BSP lifetime kurtosis: %0.4f" % bsp_lif_kurtosis)
-        pprint("BSP population kurtosis: %0.4f" % bsp_pop_kurtosis)
+    # Check whether the --bsp_out_dir command line parameter was
+    # provided.
+    bsp_out_dir = None
+    if '--bsp_out_dir' in sys.argv:
+        # Get the command line parameter value.
+        arg_index = sys.argv.index('--bsp_out_dir')
+        bsp_out_dir = sys.argv[arg_index + 1]
+    # Check whether the --asp_out_dir command line parameter was
+    # provided.
+    asp_out_dir = None
+    if '--asp_out_dir' in sys.argv:
+        # Get the command line parameter value.
+        arg_index = sys.argv.index('--asp_out_dir')
+        asp_out_dir = sys.argv[arg_index + 1]
 
-    if asp_activations_file is not None:
-        with open(asp_activations_file, 'rb') as fp:
-            asp_activations = pickle.load(fp)
-        asp_pop_kurtosis = calculate_population_kurtosis(asp_activations)
-        asp_lif_kurtosis = calculate_lifetime_kurtosis(asp_activations)
-        pprint("ASP lifetime kurtosis: %0.4f" % asp_lif_kurtosis)
-        pprint("ASP population kurtosis: %0.4f" % asp_pop_kurtosis)
+    if bsp_columns_file is None and asp_columns_file is None:
+        sys.exit('One or both of the --bsp_columns_file'
+                 ' --asp_columns_file must be provided.')
+
+    images, _ = load_images(imgs_dir, extensions=('.jpg',),
+                            img_shape=(256, 256))
+    patches = extract_patches(images, (16, 16), images.shape[0]*256,
+                              randomize=False)
+
+    if bsp_columns_file is not None:
+        with open(bsp_columns_file, 'rb') as fp:
+            bsp_columns = pickle.load(fp)
+        bsp_activations =\
+            reconstruct_images(alg='bsp', images=patches, columns=bsp_columns,
+                               connect_threshold=0.2,
+                               desired_activity_mult=0.05, min_overlap=3,
+                               out_dir=bsp_out_dir)
+        calculate_print_stats(bsp_activations)
+        save_activations(bsp_activations, bsp_columns_file)
+
+    if asp_columns_file is not None:
+        with open(asp_columns_file, 'rb') as fp:
+            asp_columns = pickle.load(fp)
+        asp_activations =\
+            reconstruct_images(alg='asp', images=patches, columns=asp_columns,
+                               connect_threshold=0.2,
+                               desired_activity_mult=0.05, min_overlap=3,
+                               out_dir=asp_out_dir)
+        calculate_print_stats(asp_activations)
+        save_activations(asp_activations, asp_columns_file)
