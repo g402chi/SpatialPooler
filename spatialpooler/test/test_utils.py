@@ -145,6 +145,12 @@ class UtilsTest(unittest.TestCase):
                              np.array([0., 1., 1., np.sqrt(2),
                                        2., np.sqrt(5)]).tolist())
 
+    def test_rebuild_imgs_from_patches(self):
+        images = np.random.randint(0, 256, 3 * 256**2).reshape((3, 256, 256))
+        patches = utils.extract_patches(images, (16, 16), 3 * 256, False)
+        rec_imgs = utils.rebuild_imgs_from_patches(patches, (256, 256))
+        self.assertListEqual(images.tolist(), rec_imgs.tolist())
+
 
 if __name__ == '__main__':
     unittest.main()
