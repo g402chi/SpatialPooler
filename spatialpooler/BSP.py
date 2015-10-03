@@ -173,7 +173,7 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     for _, _, syn_matrix in iter_columns(columns, active_matrix=active):
         # for each potential synapse [u, v] of [y, x] with permanence perm,
         # (NOTE: by definition, perm = syn_matrix[u, v])
-        for u, v, perm in iter_synapses(syn_matrix):
+        for u, v, perm in iter_synapses(syn_matrix, only_potential=True):
             s = (u, v)
             # increase perm, truncated at 1, if input_vector[u, v]==1, ...
             if input_vector[s]:
@@ -201,7 +201,7 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
         if overlap_sum[c].sum() < min_activity[c]:
             # for each potential synapse [u, v] of [y, x], ...
             # (NOTE: by definition, perm = syn_matrix[u, v])
-            for u, v, perm in iter_synapses(syn_matrix):
+            for u, v, perm in iter_synapses(syn_matrix, only_potential=True):
                 s = (u, v)
                 # multiply perm by p_mult, truncated at 1.
                 syn_matrix[s] = min(perm * p_mult, 1)
@@ -350,11 +350,14 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
                 pprint(active[random_rows, random_cols])
                 pprint("Min activity:")
                 pprint(min_activity[random_rows, random_cols])
-                pprint("Synapses modified:")
-                pprint(synapses_modified[j])
+                pprint("Inhibition area: %s" % inhibition_area)
+                pprint("Inhibition radius: %s" %
+                       (np.sqrt(inhibition_area/np.pi),))
+                pprint("Desired activity: %s" % desired_activity)
+                pprint("Synapses modified: % s" % synapses_modified[j])
         # Check if any synapses were modified in the last learning cycle.
         converged = test_for_convergence(synapses_modified)
-        pprint("Iteration %s. Synapses modified: %s" %
+        pprint("Iteration %s. Number of synapses modified: %s" %
                (i, synapses_modified.sum()))
         if i % cycles_to_save == 0 or converged:
             if output_file is not None:
