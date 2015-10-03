@@ -187,8 +187,19 @@ def extract_patches(images, patch_shape, patches_nr, randomize=True):
                 l += 1
 
     if randomize:
-        return all_patches[np.random.choice(all_patches.shape[0],
-                                            size=patches_nr, replace=False)]
+        shuffled_indexes = np.arange(all_patches.shape[0])
+        np.random.shuffle(shuffled_indexes)
+        ret_val = np.zeros((patches_nr, patch_shape[0], patch_shape[1]))
+        i = 0
+        for j in shuffled_indexes:
+            a = all_patches[j]
+            if (np.unique(a).size > 1 and
+                    not (a == ret_val).all(axis=(1, 2)).any()):
+                ret_val[i] = a
+                i += 1
+            if i == patches_nr:
+                break
+        return ret_val
     else:
         return all_patches[:patches_nr]
 
