@@ -354,7 +354,7 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
                 pprint(synapses_modified[j])
         # Check if any synapses were modified in the last learning cycle.
         converged = test_for_convergence(synapses_modified)
-        pprint("Iteration %s. Columns modified: %s" %
+        pprint("Iteration %s. Synapses modified: %s" %
                (i, synapses_modified.sum()))
         if i % cycles_to_save == 0 or converged:
             if output_file is not None:
