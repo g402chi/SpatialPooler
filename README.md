@@ -33,9 +33,8 @@ The three can be installed using the Anaconda distribution by:
   [the Continuum Analytics' website](https://www.continuum.io/downloads).
 * Installing Anaconda.
 * Opening a terminal and typing:
-&nbsp;
 
-    conda install numpy numexpr matplotlib
+        conda install numpy numexpr matplotlib
 
 
 # Use:
