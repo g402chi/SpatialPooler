@@ -17,7 +17,7 @@ Finally, the *images* directory contains the images that where used for training
 The BSP and ASP implementations depend on numpy, numexpr and matplotlib.
 The three can be installed using the Anaconda distribution by:
 
-* Downloading the installer appropriate for your OS from https://www.continuum.io/downloads.
+* Downloading the installer appropriate for your OS from [the Continuum Analytics' website](https://www.continuum.io/downloads).
 * Installing Anaconda.
 * opening a terminal and typing:
 
