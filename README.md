@@ -21,6 +21,7 @@ The three can be installed using the Anaconda distribution by:
 * Installing Anaconda.
 * opening a terminal and typing:
 
+
     conda install numpy numexpr matplotlib
 
 # Use:
