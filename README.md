@@ -21,8 +21,6 @@ The three can be installed using the Anaconda distribution by:
 * Installing Anaconda.
 * opening a terminal and typing:
 
-::
-
     conda install numpy numexpr matplotlib
 
 # Use:
@@ -34,8 +32,6 @@ To perform the experiments the RGB images where transformed to grayscale and, in
 
 In order to run the BSP, you can use the following command (from the repository's root):
 
-::
-
     spatialpooler/BSP.py --output_file ./columns2k-8img_bsp.pickle --patches_file patches2k-8img_binary.pickle
 
 columns2k-8img_bsp.pickle is the name of the file where (pickled) trained columns, in the form of a 4D numpy array, will be stored.
@@ -44,8 +40,6 @@ patches2k-8img_binary.pickle is a pre-generated patches taken from some of the i
 ## Augmented Spatial Pooler:
 
 In order to run the ASP, you can use the following command (from the repository's root):
-
-::
 
     spatialpooler/ASP.py --output_file ./columns2k-8img_asp.pickle --patches_file patches2k-8img_grayscale.pickle
 
