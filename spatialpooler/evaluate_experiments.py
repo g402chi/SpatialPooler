@@ -29,20 +29,22 @@ from pprint import pprint
 import os
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from ASP import calculate_overlap as asp_overlap
 from BSP import calculate_overlap as bsp_overlap
 from common import calculate_distances, inhibit_columns, update_inhibition_area
 from utils import (extract_patches, load_images, RingBuffer, read_input,
-                   rebuild_imgs_from_patches)
+                   rebuild_imgs_from_patches, grayscale_to_bits)
 
 
 def calculate_lifetime_kurtosis(activations):
-    # Get the shape of the activations array
-    shape = activations.shape
+    # Get the act_shape of the activations array
+    act_shape = activations.shape
     # Reshape the activations array from 3D to 2D by flattening the columns
     # matrix.
-    activations = activations.reshape(shape[0], shape[1] * shape[2])
+    activations = activations.reshape(act_shape[0],
+                                      act_shape[1] * act_shape[2])
     # For each column, calculate its activation'S mean  for all images.
     col_mean_act = np.nanmean(activations, axis=0)
     # For each column, calculate its activation's standard deviation for all
@@ -52,18 +54,19 @@ def calculate_lifetime_kurtosis(activations):
     col_life_kurtosis = (activations - col_mean_act) / col_std_act
     # For each column, calculate its kurtosis.
     col_life_kurtosis = np.power(col_life_kurtosis, 4)
-    col_life_kurtosis = col_life_kurtosis.sum(axis=0)/shape[0] - 3
+    col_life_kurtosis = np.nansum(col_life_kurtosis, axis=0)/act_shape[0] - 3
 
     # Return the mean kurtosis over all columns
-    return col_life_kurtosis.sum()/col_life_kurtosis.shape[0]
+    return np.nansum(col_life_kurtosis)/col_life_kurtosis.shape[0]
 
 
 def calculate_population_kurtosis(activations):
-    # Get the shape of the activations array
-    shape = activations.shape
+    # Get the act_shape of the activations array
+    act_shape = activations.shape
     # Reshape the activations array from 3D to 2D by flattening the columns
     # matrix.
-    activations = activations.reshape(shape[0], shape[1] * shape[2])
+    activations = activations.reshape(act_shape[0],
+                                      act_shape[1] * act_shape[2])
     # For each image, calculate its activation'S mean  for all columns.
     img_mean_act = np.nanmean(activations, axis=1)
     # For each image, calculate its activation's standard deviation for all
@@ -73,21 +76,45 @@ def calculate_population_kurtosis(activations):
     img_pop_kurtosis = ((activations.T - img_mean_act) / img_std_act).T
     # For each image, calculate its kurtosis.
     img_pop_kurtosis = np.power(img_pop_kurtosis, 4)
-    img_pop_kurtosis = img_pop_kurtosis.sum(axis=1)/activations.shape[1] - 3
+    img_pop_kurtosis = (np.nansum(img_pop_kurtosis, axis=1) /
+                        activations.shape[1] - 3)
 
     # Return the mean kurtosis over all images
-    return img_pop_kurtosis.sum()/img_pop_kurtosis.shape[0]
+    return np.nansum(img_pop_kurtosis)/img_pop_kurtosis.shape[0]
+
+
+def calculate_code_stats(activations):
+    # Get the act_shape of the activations array
+    act_shape = activations.shape
+    # Reshape the activations array from 3D to 2D by flattening the columns
+    # matrix.
+    activations = activations.reshape(act_shape[0],
+                                      act_shape[1] * act_shape[2])
+    activations = activations > 0
+    b = (np.ascontiguousarray(activations)
+         .view(np.dtype(
+                        (np.void,
+                         activations.dtype.itemsize *
+                         activations.shape[1]))))
+    _, idx = np.unique(b, return_index=True)
+    unique_act = activations[idx]
+    duplicates_nr = unique_act.shape[0]
+    dups_perc = duplicates_nr/act_shape[0]
+    zero_nr = np.argwhere(~(activations > 0).any(axis=1)).size
+    zero_perc = zero_nr/act_shape[0]
+    mean_code_len = activations.sum()/act_shape[0]
+
+    return dups_perc, zero_perc, mean_code_len
 
 
 def reconstruct_images(alg, images, columns, connect_threshold,
-                       desired_activity_mult, min_overlap,
+                       desired_activity_mult, min_overlap, img_shape,
                        out_dir=None):
     shape = columns.shape
-    img_shape = shape[:2]
     # Initialize boost matrix.
     boost = np.ones(shape=shape[:2])
     part_rbuffer = partial(RingBuffer,
-                           input_array=np.zeros(1, dtype=np.bool))
+                           input_array=np.zeros(1, dtype=np.bool), copy=True)
     # Initialize activity dictionary.
     activity = defaultdict(part_rbuffer)
     if alg == 'bsp':
@@ -110,19 +137,15 @@ def reconstruct_images(alg, images, columns, connect_threshold,
         if alg == 'bsp':
             overlap, _ = bsp_overlap(image, columns, min_overlap,
                                      connect_threshold, boost, overlap_sum)
-            # force sparsity by inhibiting columns, ...
-            active, activity =\
-                inhibit_columns(columns, distances, inhibition_area,
-                                overlap, activity, desired_activity)
         elif alg == 'asp':
             # calculate the overlap of the columns with the image.
             # (this is a simple count of the number of its connected synapses
             # that are receiving active input (p. 3)), ...
             overlap = asp_overlap(image, columns, min_overlap,
                                   connect_threshold, boost)
-            # force sparsity by inhibiting columns, ...
-            active, _ = inhibit_columns(columns, distances, inhibition_area,
-                                        overlap, activity, desired_activity)
+        # force sparsity by inhibiting columns, ...
+        active, _ = inhibit_columns(columns, distances, inhibition_area,
+                                    overlap, activity, desired_activity)
         reconstructions[i] = columns[active].sum()
         # Store the post-inhibition overlap activity of each column as the
         # sum of the overlap of the active columns.
@@ -133,8 +156,8 @@ def reconstruct_images(alg, images, columns, connect_threshold,
             os.mkdir(out_dir)
         reconstructions = rebuild_imgs_from_patches(reconstructions, img_shape)
         for i, reconstruct_img in enumerate(reconstructions):
-            with open(os.path.join(out_dir, 'rec_img_%d' % i), 'wb') as fp:
-                pickle.dump(reconstruct_img, fp)
+            with open(os.path.join(out_dir, 'rec_img_%d.jpg' % i), 'wb') as fp:
+                plt.imsave(fname=fp, arr=reconstruct_img, cmap='gray', )
     return activations
 
 
@@ -146,12 +169,15 @@ def save_activations(activations, columns_file):
         pickle.dump(activations, fp)
 
 
-def calculate_print_stats(activations):
+def calculate_print_stats(activations, alg):
     pop_kurtosis = calculate_population_kurtosis(activations)
     lif_kurtosis = calculate_lifetime_kurtosis(activations)
-    pprint("BSP lifetime kurtosis: %0.4f" % pop_kurtosis)
-    pprint("BSP population kurtosis: %0.4f" % lif_kurtosis)
-
+    dups, zero, code_len = calculate_code_stats(activations)
+    pprint("%s lifetime kurtosis: %0.4f" % (alg, lif_kurtosis))
+    pprint("%s population kurtosis: %0.4f" % (alg, pop_kurtosis))
+    pprint("%s %% code duplicates: %0.4f%%" % (alg, dups*100))
+    pprint("%s %% code zero length: %0.4f%%" % (alg, zero*100))
+    pprint("%s mean code length: %0.4f%%" % (alg, code_len))
 
 
 if __name__ == '__main__':
@@ -207,17 +233,6 @@ if __name__ == '__main__':
     patches = extract_patches(images, (16, 16), images.shape[0]*256,
                               randomize=False)
 
-    if bsp_columns_file is not None:
-        with open(bsp_columns_file, 'rb') as fp:
-            bsp_columns = pickle.load(fp)
-        bsp_activations =\
-            reconstruct_images(alg='bsp', images=patches, columns=bsp_columns,
-                               connect_threshold=0.2,
-                               desired_activity_mult=0.05, min_overlap=3,
-                               out_dir=bsp_out_dir)
-        calculate_print_stats(bsp_activations)
-        save_activations(bsp_activations, bsp_columns_file)
-
     if asp_columns_file is not None:
         with open(asp_columns_file, 'rb') as fp:
             asp_columns = pickle.load(fp)
@@ -225,6 +240,19 @@ if __name__ == '__main__':
             reconstruct_images(alg='asp', images=patches, columns=asp_columns,
                                connect_threshold=0.2,
                                desired_activity_mult=0.05, min_overlap=3,
-                               out_dir=asp_out_dir)
-        calculate_print_stats(asp_activations)
+                               img_shape=(256, 256), out_dir=asp_out_dir)
+        calculate_print_stats(asp_activations, alg='ASP')
         save_activations(asp_activations, asp_columns_file)
+
+    if bsp_columns_file is not None:
+        with open(bsp_columns_file, 'rb') as fp:
+            bsp_columns = pickle.load(fp)
+        binary_patches = grayscale_to_bits(patches)
+        bsp_activations =\
+            reconstruct_images(alg='bsp', images=binary_patches,
+                               columns=bsp_columns,
+                               connect_threshold=0.2,
+                               desired_activity_mult=0.05, min_overlap=3,
+                               img_shape=(256, 256), out_dir=bsp_out_dir)
+        calculate_print_stats(bsp_activations, alg='BSP')
+        save_activations(bsp_activations, bsp_columns_file)
