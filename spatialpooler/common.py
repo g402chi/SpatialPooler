@@ -200,7 +200,7 @@ def inhibit_columns(columns, distances, inhibition_area,
     # from column a to column b is less than the inhibition radius, than to
     # check whether column b lies inside column a's inhibition area.
     # Both approaches are equivalent, since the inhibition area is a circle.
-    inhibition_radius = 4 * np.sqrt(inhibition_area/np.pi)
+    inhibition_radius = np.sqrt(inhibition_area/np.pi)
 
     # For each column [y, x]...
     for y, x, _ in iter_columns(columns):
@@ -232,6 +232,10 @@ def inhibit_columns(columns, distances, inhibition_area,
                 # and then update the activity array, indicating that
                 # the column [y, x] was inactive in this iteration.
                 activity[y, x].append(0)
+        else:
+            # update the activity array, indicating that
+            # the column [y, x] was inactive in this iteration.
+            activity[y, x].append(0)
 
     return active, activity
 
@@ -432,7 +436,7 @@ def calculate_min_activity(columns, active, distances, inhibition_area,
     # from column a to column b is less than the inhibition radius, than to
     # check whether column b lies inside column a's inhibition area.
     # Both approaches are equivalent, since the inhibition area is a circle.
-    inhibition_radius = 4 * np.sqrt(inhibition_area/np.pi)
+    inhibition_radius = np.sqrt(inhibition_area/np.pi)
 
     # For each active column [y, x], ...
     for y, x, _ in iter_columns(columns, active_matrix=active):

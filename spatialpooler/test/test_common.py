@@ -66,7 +66,7 @@ class CommonTest(unittest.TestCase):
         self.assertListEqual(dists.tolist(), self.distances.tolist())
 
     def test_inhibit_columns(self):
-        inhibition_area = 2*np.pi/16
+        inhibition_area = 2*np.pi
         overlap = np.array([[2, 1], [2, 1]])
         part_deque = partial(RingBuffer, input_array=np.zeros(2), copy=True)
         activity = defaultdict(part_deque)
@@ -91,7 +91,7 @@ class CommonTest(unittest.TestCase):
 
     def test_calculate_min_activity(self):
         active = np.array([[1, 1], [1, 1]])
-        inhibition_area = np.pi/16
+        inhibition_area = np.pi
         part_deque = partial(RingBuffer, input_array=np.zeros(2), copy=True)
         activity = defaultdict(part_deque)
         activity[0, 0].extend([1, 1])
