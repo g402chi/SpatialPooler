@@ -196,11 +196,6 @@ def inhibit_columns(columns, distances, inhibition_area,
     """
     # Initialize the active array filling it with False.
     active = np.zeros(shape=columns.shape[:2], dtype=np.bool)
-    # Calculate the inhibition radius. It is easier to check if the distance
-    # from column a to column b is less than the inhibition radius, than to
-    # check whether column b lies inside column a's inhibition area.
-    # Both approaches are equivalent, since the inhibition area is a circle.
-    inhibition_radius = np.sqrt(inhibition_area/np.pi)
 
     # For each column [y, x]...
     for y, x, _ in iter_columns(columns):
@@ -213,7 +208,7 @@ def inhibit_columns(columns, distances, inhibition_area,
             activity_sum = 0
             # obtain the list of neighbours of the column [y, x], ...
             neighbours = iter_neighbours(columns, y, x, distances,
-                                         inhibition_radius)
+                                         inhibition_area)
             # for each neighbour [u, v] of [y, x] ...
             for u, v, _ in neighbours:
                 # if the neighbour's overlap is over this column's overlap, ...
@@ -432,11 +427,6 @@ def calculate_min_activity(columns, active, distances, inhibition_area,
     """
     # Initialize the min_activity array.
     min_activity = np.zeros(shape=columns.shape[:2])
-    # Calculate the inhibition radius. It is easier to check if the distance
-    # from column a to column b is less than the inhibition radius, than to
-    # check whether column b lies inside column a's inhibition area.
-    # Both approaches are equivalent, since the inhibition area is a circle.
-    inhibition_radius = np.sqrt(inhibition_area/np.pi)
 
     # For each active column [y, x], ...
     for y, x, _ in iter_columns(columns, active_matrix=active):
@@ -444,7 +434,7 @@ def calculate_min_activity(columns, active, distances, inhibition_area,
         max_activity = 0
         # get the neighbours of [y, x] ...
         neighbours = iter_neighbours(columns, y, x, distances,
-                                     inhibition_radius)
+                                     inhibition_area)
         # and for each neighbour [u, v] of [y, x], ...
         for u, v, _ in neighbours:
             n = (u, v)

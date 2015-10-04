@@ -112,7 +112,7 @@ def iter_synapses(synapses, only_potential=True):
                 yield y, x, syn_perm
 
 
-def iter_neighbours(columns, y, x, distances, inhibition_radius):
+def iter_neighbours(columns, y, x, distances, inhibition_area):
     """
     Go through the matrix of synapse's permanences associated with a HTM
     column, yielding at each element the element's coordinates together
@@ -133,6 +133,11 @@ def iter_neighbours(columns, y, x, distances, inhibition_radius):
              matrix, all three of a particular HTM column that is neighbour of
              columns[y, x].
     """
+    # Calculate the inhibition radius. It is easier to check if the distance
+    # from column a to column b is less than the inhibition radius, than to
+    # check whether column b lies inside column a's inhibition area.
+    # Both approaches are equivalent, since the inhibition area is a circle.
+    inhibition_radius = np.sqrt(inhibition_area/np.pi)
     # Create a boolean array of shape (columns.shape[0], columns.shape[1]).
     # Each element neighbours[a, b] is True if the euclidean distance from
     # (y, x) to (a, b) is inside the inhibition_radius and False otherwise.
