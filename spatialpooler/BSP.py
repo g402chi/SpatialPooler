@@ -117,7 +117,8 @@ def calculate_overlap(input_vector, columns, min_overlap, connect_threshold,
 
 def learn_synapse_connections(columns, active, input_vector, p_inc,
                               p_dec, activity, overlap_sum,
-                              min_activity, boost, b_inc, p_mult):
+                              min_activity, boost, b_inc, p_mult,
+                              connect_threshold):
     """
     Calculates the minActivity matrix from the paper (p. 4).
     :param columns: the 4-dimensional array of HTM columns: a 4-dimensional
@@ -169,6 +170,9 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     """
     # Assume no synapse will be modified.
     synapse_modified = False
+    # Store which synapses are connecter and which aren't.
+    pre_col_matrix = ne.evaluate('columns >= connect_threshold')
+
     # For each active column [y, x] ...
     for _, _, syn_matrix in iter_columns(columns, active_matrix=active):
         # for each potential synapse [u, v] of [y, x] with permanence perm,
@@ -205,10 +209,12 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
                 s = (u, v)
                 # multiply perm by p_mult, truncated at 1.
                 syn_matrix[s] = min(perm * p_mult, 1)
-                # Set synapse_modified to True if any synapse was modified by
-                # this algorithm.
-                if syn_matrix[s] != perm:
-                    synapse_modified = True
+
+    # Set synapse_modified to True if any synapse change from connected to
+    # disconnected or vice-versa by this algorithm.
+    if (pre_col_matrix !=
+            ne.evaluate('columns >= connect_threshold')).any():
+        synapse_modified = True
 
     # Return the columns array, with its synapses modified.
     return columns, synapse_modified
@@ -320,7 +326,8 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
             columns, synapses_modified[j] =\
                 learn_synapse_connections(columns, active, image, p_inc,
                                           p_dec, activity, overlap_sum,
-                                          min_activity, boost, b_inc, p_mult)
+                                          min_activity, boost, b_inc, p_mult,
+                                          connect_threshold)
             # Update the inhibition_area parameter.
             inhibition_area = update_inhibition_area(columns,
                                                      connect_threshold)
@@ -355,7 +362,8 @@ def spatial_pooler(images, shape, p_connect=0.1, connect_threshold=0.2,
                        (np.sqrt(inhibition_area/np.pi),))
                 pprint("Desired activity: %s" % desired_activity)
                 pprint("Synapses modified: % s" % synapses_modified[j])
-        # Check if any synapses were modified in the last learning cycle.
+        # Check if any synapses changed from connected to disconnected or
+        # vice-versa in the last learning cycle.
         converged = test_for_convergence(synapses_modified)
         pprint("Iteration %s. Number of synapses modified: %s" %
                (i, synapses_modified.sum()))
