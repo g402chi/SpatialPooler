@@ -110,9 +110,9 @@ def calculate_code_stats(activations):
 def reconstruct_images(alg, images, columns, connect_threshold,
                        desired_activity_mult, min_overlap, img_shape,
                        out_dir=None):
-    shape = columns.shape
+    cols_shape = columns.shape
     # Initialize boost matrix.
-    boost = np.ones(shape=shape[:2])
+    boost = np.ones(shape=cols_shape[:2])
     part_rbuffer = partial(RingBuffer,
                            input_array=np.zeros(1, dtype=np.bool), copy=True)
     # Initialize activity dictionary.
@@ -121,7 +121,7 @@ def reconstruct_images(alg, images, columns, connect_threshold,
         # Initialize overlap_sum dictionary.
         overlap_sum = defaultdict(part_rbuffer)
 
-    distances = calculate_distances(shape)
+    distances = calculate_distances(cols_shape)
     # Calculate the inhibition_area parameter.
     inhibition_area = update_inhibition_area(columns, connect_threshold)
     # Calculate the desired activity in a inhibition zone.
@@ -130,8 +130,8 @@ def reconstruct_images(alg, images, columns, connect_threshold,
     reconstructions = np.zeros_like(images)
     # Initialize the activations matrix. This will be used to calculate the
     # population and lifetime kurtoses.
-    activations = np.zeros(shape=(images.shape[0], shape[0], shape[1]),
-                           dtype=np.int)
+    activations = np.zeros(shape=(images.shape[0], cols_shape[0],
+                                  cols_shape[1]), dtype=np.int)
 
     for i, image, _ in read_input(images):
         if alg == 'bsp':
@@ -146,17 +146,33 @@ def reconstruct_images(alg, images, columns, connect_threshold,
         # force sparsity by inhibiting columns, ...
         active, _ = inhibit_columns(columns, distances, inhibition_area,
                                     overlap, activity, desired_activity)
-        reconstructions[i] = columns[active].sum()
+        # set reconstructions[i][y, x] to (sic, p. 7):
+        #    "[...] the linear superposition of the
+        #     connected synapses of the columns that become active
+        #     when the input is present [...]"
+        # first, generate a copy of the columns array, where all the synapses
+        # of all inactive columns are set to 0, ...
+        active_cols = np.where(active, columns,
+                               np.zeros(shape=(cols_shape[2], cols_shape[3])))
+        # and then set reconstructions[i] to the linear superposition of the
+        # synapses of the active columns.
+        reconstructions[i] = np.nansum(active_cols, axis=(0, 1))
         # Store the post-inhibition overlap activity of each column as the
         # sum of the overlap of the active columns.
-        activations[i, active] = overlap[active]
+        activations[i] = np.nansum(columns, axis=(2, 3))
 
     if out_dir is not None:
         if not os.path.exists(out_dir):
             os.mkdir(out_dir)
+        # Rebuild the 256x 256 images from the 16x16 patches.
         reconstructions = rebuild_imgs_from_patches(reconstructions, img_shape)
+        # Scale the pixel values to the range [0, 1].
+        reconstructions = reconstructions - reconstructions.min()
+        reconstructions /= reconstructions.max() - reconstructions.min()
+        # Scale the pixel values to the range [0, 255].
+        reconstructions *= 255
         for i, reconstruct_img in enumerate(reconstructions):
-            with open(os.path.join(out_dir, 'rec_img_%d.jpg' % i), 'wb') as fp:
+            with open(os.path.join(out_dir, 'rec_img_%d.png' % i), 'wb') as fp:
                 plt.imsave(fname=fp, arr=reconstruct_img, cmap='gray', )
     return activations
 
@@ -177,7 +193,7 @@ def calculate_print_stats(activations, alg):
     pprint("%s population kurtosis: %0.4f" % (alg, pop_kurtosis))
     pprint("%s %% code duplicates: %0.4f%%" % (alg, dups*100))
     pprint("%s %% code zero length: %0.4f%%" % (alg, zero*100))
-    pprint("%s mean code length: %0.4f%%" % (alg, code_len))
+    pprint("%s mean code length: %0.4f" % (alg, code_len))
 
 
 if __name__ == '__main__':
