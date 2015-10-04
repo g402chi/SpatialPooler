@@ -174,6 +174,8 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
     synapse_modified = False
     mean_input = np.nanmean(input_vector)
 
+    # Store which synapses are connecter and which aren't.
+    pre_col_matrix = ne.evaluate('columns >= connect_threshold')
     # For each active column [y, x] ...
     for _, _, syn_matrix in iter_columns(columns, active_matrix=active):
         # for each potential synapse [u, v] of [y, x] with permanence perm,
@@ -189,10 +191,6 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
                                     connect_threshold - p_inc)
             else:
                 syn_matrix[s] = max(perm - p_dec, 0)
-            # Set synapse_modified to True if any synapse was modified by
-            # this algorithm.
-            if syn_matrix[s] != perm:
-                synapse_modified = True
 
     # For each column [y, x] ...
     for y, x, syn_matrix in iter_columns(columns):
@@ -220,14 +218,15 @@ def learn_synapse_connections(columns, active, input_vector, p_inc,
                 max_syn = max(iter_synapses(syn_matrix),
                               key=filter_permanences)
                 max_s = max_syn[:2]
-                max_perm = max_syn[2]
                 # and set the selected synapse's permanence value to p_inc
                 # above the threshold.
                 syn_matrix[max_s] = connect_threshold + p_inc
-                # Set synapse_modified to True if any synapse was modified by
-                # this algorithm.
-                if syn_matrix[max_s] != max_perm:
-                    synapse_modified = True
+
+    # Set synapse_modified to True if any synapse change from connected to
+    # disconnected or vice-versa by this algorithm.
+    if (pre_col_matrix !=
+            ne.evaluate('columns >= connect_threshold')).any():
+        synapse_modified = True
 
     # Return the columns array, with its synapses modified.
     return columns, synapse_modified
@@ -380,7 +379,8 @@ def spatial_pooler(images, shape, p_connect=0.15, connect_threshold=0.2,
                        (np.sqrt(inhibition_area/np.pi),))
                 pprint("Desired activity: %s" % desired_activity)
                 pprint("Synapses modified: %s" % synapses_modified[j])
-        # Check if any synapses were modified in the last learning cycle.
+        # Check if any synapses changed from connected to disconnected or
+        # vice-versa in the last learning cycle.
         converged = test_for_convergence(synapses_modified)
         pprint("Iteration %s. Number of synapses modified: %s" %
                (i, synapses_modified.sum()))
